@@ -49,8 +49,8 @@ dependencies {
 	
  	compile group: 'com.google.guava', name: 'guava', version: '15.0'
     compile 'org.slf4j:slf4j-api:1.7.21'
-	antlr "org.antlr:antlr4:4.6" 
-	compile group: 'org.antlr', name: 'antlr4', version: '4.6'
+	antlr "org.antlr:antlr4:4.8" 
+	compile group: 'org.antlr', name: 'antlr4', version: '4.8'
 	
     testCompile 'junit:junit:4.12'
     compile project(':cltloc')

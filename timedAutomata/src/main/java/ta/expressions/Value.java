@@ -3,13 +3,29 @@ package ta.expressions;
 import ta.visitors.Expression2CLTLocExpression;
 import ta.visitors.ExpressionVisitor;
 
+import java.util.Map;
+
 public class Value extends Expression {
 
 	
 	public String value;
+	public String parameter;
 
 	public Value(String value) {
 		this.value = value;
+		this.parameter = null;
+	}
+
+	public Value(String parameter, boolean flag) {
+		this.parameter = parameter;
+		this.value = "0";
+	}
+
+	public Value replaceParameters (Map<String, Value> parameterMap) {
+		if (this.parameter != null && parameterMap.containsKey(this.parameter)) {
+			return parameterMap.get(this.parameter);
+		}
+		return this;
 	}
 
 	@Override

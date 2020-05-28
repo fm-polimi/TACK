@@ -5,7 +5,10 @@ import com.google.common.base.Preconditions;
 import formulae.cltloc.CLTLocFormula;
 import ta.Variable;
 import ta.expressions.Expression;
+import ta.expressions.Value;
 import ta.visitors.Expression2CLTLoc;
+
+import java.util.Map;
 
 public class VariableAssignement extends Assignment {
 	private final Variable variable;
@@ -24,6 +27,14 @@ public class VariableAssignement extends Assignment {
 
 	public Expression getValue() {
 		return this.expression;
+	}
+
+	public VariableAssignement replaceParameters(Map<String, Value> parameterMap) {
+		if (this.expression instanceof Value) {
+			Value value = (Value) this.expression;
+			return new VariableAssignement(this.variable, value.replaceParameters(parameterMap));
+		}
+		return this;
 	}
 
 	/**

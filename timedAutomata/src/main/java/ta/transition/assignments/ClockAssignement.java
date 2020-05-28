@@ -6,6 +6,8 @@ import ta.Clock;
 import ta.expressions.Value;
 import ta.visitors.TAVisitor;
 
+import java.util.Map;
+
 public class ClockAssignement extends Assignment {
 	private final Clock clock;
 	private final Value value;
@@ -23,6 +25,10 @@ public class ClockAssignement extends Assignment {
 
 	public Value getValue() {
 		return value;
+	}
+
+	public ClockAssignement replaceParameters(Map<String, Value> parameterMap) {
+		return new ClockAssignement(clock, value.replaceParameters(parameterMap));
 	}
 
 	/**

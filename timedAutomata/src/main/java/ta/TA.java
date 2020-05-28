@@ -40,6 +40,9 @@ public class TA {
 	private List<String> actions;
 	private List<String> sendActions;
 	private List<String> receiveActions;
+	// Template Parameters
+	private List<String> parameters;
+	public boolean complete; // true iff parameters is empty
 
 	/**
 	 * The name of the timed automaton
@@ -98,6 +101,14 @@ public class TA {
 
 	public int getNumberStates() {
 		return this.states.size();
+	}
+
+	public TA(String identifier, Set<AP> atomicPropositions, Set<State> states, Set<Transition> transitions,
+			  State initialState, Set<Clock> clocks, Set<Variable> variables, Set<VariableDecl> variableDeclaration,
+			  Set<ClockDecl> clockDeclarations, List<String> parameters) {
+		this(identifier, atomicPropositions, states, transitions, initialState, clocks, variables, variableDeclaration, clockDeclarations);
+		this.parameters = parameters;
+		if (!this.parameters.isEmpty()) this.complete = false;
 	}
 
 	public TA(String identifier, Set<AP> atomicPropositions, Set<State> states, Set<Transition> transitions,
@@ -179,6 +190,10 @@ public class TA {
 		for (Transition t : this.transitions) {
 			this.successors.get(t.getSource()).add(t.getDestination());
 		}
+
+		// Template Parameters
+		this.parameters = new ArrayList<>(); // no params, not a template
+		this.complete = true;
 	}
 
 	public Set<State> successors(State s) {
@@ -256,6 +271,22 @@ public class TA {
 
 	public Set<VariableDecl> getDeclarations() {
 		return this.variableDeclaration;
+	}
+
+	public List<String> getParameters() { return this.parameters; }
+
+	public TA replaceParameters(String newIdentifier, Map<String, Value> parameterMap) {
+		List<String> newParameters = new ArrayList<>();
+		for (String p: this.parameters) {
+			if (!parameterMap.containsKey(p)) {
+				newParameters.add(p);
+			}
+		}
+		Set<Transition> newTransitions = transitions.stream().map(t -> {
+			return t.replaceParameters(parameterMap);
+		}).collect(Collectors.toSet());
+		return new TA(newIdentifier, atomicPropositions, states, newTransitions, initialState, clocks, variables, variableDeclaration,
+				clockDeclarations, newParameters);
 	}
 
 	/**

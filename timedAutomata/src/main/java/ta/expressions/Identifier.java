@@ -5,6 +5,8 @@ import com.google.common.base.Preconditions;
 import ta.visitors.Expression2CLTLocExpression;
 import ta.visitors.ExpressionVisitor;
 
+import java.util.Map;
+
 public class Identifier extends Expression {
 
 	/**
@@ -19,6 +21,11 @@ public class Identifier extends Expression {
 
 	public String getId() {
 		return id;
+	}
+
+	//@Override
+	public Expression replaceParameters(Map<String, Value> parameterMap) {
+		return this;
 	}
 
 	@Override

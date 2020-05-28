@@ -1,4 +1,4 @@
-// Generated from MITLI.g4 by ANTLR 4.6
+// Generated from MITLI.g4 by ANTLR 4.8
 
 package formulae.mitli.parser;
 

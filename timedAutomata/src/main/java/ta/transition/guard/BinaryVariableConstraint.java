@@ -1,10 +1,12 @@
 package ta.transition.guard;
 
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import operators.PropositionalLogicOperator;
 import ta.Variable;
+import ta.expressions.Value;
 import ta.expressions.binary.BinaryExpression;
 import ta.visitors.Expression2CLTLocExpression;
 import ta.visitors.ExpressionVisitor;
@@ -28,6 +30,16 @@ public class BinaryVariableConstraint extends BinaryExpression<VariableConstrain
 	public int evaluate() {
 		// TODO Auto-generated method stub
 		return 0;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public BinaryVariableConstraint replaceParameters (Map<String, Value> parameterMap) {
+		//TODO: replace clocks
+		return new BinaryVariableConstraint(this.getLeftChild().replaceParameters(parameterMap),
+				this.getOperator(), this.getRightChild().replaceParameters(parameterMap));
 	}
 
 	/**

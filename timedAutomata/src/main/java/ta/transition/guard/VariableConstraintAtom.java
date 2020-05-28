@@ -1,20 +1,22 @@
 package ta.transition.guard;
 
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import com.google.common.base.Preconditions;
 
 import ta.Variable;
+import ta.expressions.Value;
 import ta.visitors.TAVisitor;
 
 public class VariableConstraintAtom implements VariableConstraint{
 
 	private final Variable variable;
-	private final int value;
+	private final Value value;
 	private final VariableConstraintAtomOperator operator;
 
-	public VariableConstraintAtom(Variable variable,VariableConstraintAtomOperator operator,  int value) {
+	public VariableConstraintAtom(Variable variable, VariableConstraintAtomOperator operator,  Value value) {
 		Preconditions.checkNotNull(variable, "The variable cannot be null");
 		this.variable = variable;
 		this.value = value;
@@ -26,7 +28,7 @@ public class VariableConstraintAtom implements VariableConstraint{
 	}
 
 	public int getValue() {
-		return value;
+		return value.evaluate();
 	}
 
 	public VariableConstraintAtomOperator getOperator() {
@@ -56,6 +58,15 @@ public class VariableConstraintAtom implements VariableConstraint{
 		public String toString() {
 			return this.operaor;
 		}
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public VariableConstraintAtom replaceParameters (Map<String, Value> parameterMap) {
+		//TODO: replace clocks
+		return new VariableConstraintAtom(this.variable, this.operator, this.value.replaceParameters(parameterMap));
 	}
 
 	/**

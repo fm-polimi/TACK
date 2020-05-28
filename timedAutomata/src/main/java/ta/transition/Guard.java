@@ -1,10 +1,12 @@
 package ta.transition;
 
 import java.util.Collections;
+import java.util.Map;
 import java.util.Set;
 
 import com.google.common.base.Preconditions;
 
+import ta.expressions.Value;
 import ta.transition.guard.ClockConstraintAtom;
 import ta.transition.guard.VariableConstraintAtom;
 
@@ -32,6 +34,14 @@ public class Guard {
 		return Collections.unmodifiableSet(clockConstraints);
 	}
 
+	// Param replacement - need to first change clockConstraint & variableConstraint to use Value class instead of int
+	//public Guard replaceParameters(Map<String, Value> parameterMap) {
+	//
+	//}
+
+	public Guard replaceParameters(Map<String, Value> parameterMap) {
+		return new Guard(this.conditions, this.clockConstraints);
+	}
 	/**
 	 * {@inheritDoc}
 	 */

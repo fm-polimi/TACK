@@ -2,19 +2,21 @@ package ta.transition.guard;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Map;
 
 import com.google.common.base.Preconditions;
 
 import ta.Clock;
 import ta.visitors.TAVisitor;
+import ta.expressions.Value;
 
 public class ClockConstraintAtom implements ClockConstraint {
 
 	private final Clock clock;
-	private final int value;
+	private final Value value;
 	private final ClockConstraintAtomOperator operator;
 
-	public ClockConstraintAtom(Clock clock,ClockConstraintAtomOperator operator,  int value) {
+	public ClockConstraintAtom(Clock clock,ClockConstraintAtomOperator operator, Value value) {
 		Preconditions.checkNotNull(clock, "The clock cannot be null");
 		this.clock = clock;
 		this.value = value;
@@ -26,7 +28,7 @@ public class ClockConstraintAtom implements ClockConstraint {
 	}
 
 	public int getValue() {
-		return value;
+		return value.evaluate();
 	}
 
 	public ClockConstraintAtomOperator getOperator() {
@@ -56,6 +58,15 @@ public class ClockConstraintAtom implements ClockConstraint {
 		public String toString() {
 			return this.operaor;
 		}
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public ClockConstraintAtom replaceParameters (Map<String, Value> parameterMap) {
+		//TODO: replace clocks
+		return new ClockConstraintAtom(this.clock, this.operator, this.value.replaceParameters(parameterMap));
 	}
 
 	/**

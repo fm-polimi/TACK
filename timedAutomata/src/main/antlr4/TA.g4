@@ -9,8 +9,9 @@
  	 private static Map<String, String> currentTaDeclarations = new HashMap<String, String>();
  	 private static Map<String,Set<Integer>> boundedVariablesValues=new HashMap<>();
  	 private static String currentProc;
+ 	 private static List<String> currentParameters;
  	 private boolean definedVar(String name){
- 	    if(!currentTaDeclarations.containsKey(name) && !declarations.containsKey(name)){
+ 	    if(!currentTaDeclarations.containsKey(name) && !declarations.containsKey(name) && !currentParameters.contains(name)){
         	return false;
         }
         return true;
@@ -18,12 +19,14 @@
     
     private void clean(){
     	boundedVariablesValues=new HashMap<>();
-    	 declarations = new HashMap<String, String>();
-    	 currentTaDeclarations = new HashMap<String, String>();
-    	  currentProc="";
+    	declarations = new HashMap<String, String>();
+    	currentTaDeclarations = new HashMap<String, String>();
+    	currentProc="";
+    	currentParameters = new ArrayList<String>();
     }
     private void cleanCurrentTA(){
     	currentTaDeclarations = new HashMap<String, String>();
+    	currentParameters = new ArrayList<String>();
     	
     }
 
@@ -64,6 +67,20 @@ import ta.transition.guard.VariableConstraintAtom.VariableConstraintAtomOperator
 import operators.*;
 }
 
+// Current Status:
+// Using the simple Value implementation of parameters, we can have parameters on the
+// right hand side of clock/variable assignments/guards of TA transitions.
+// However replacing clocks, variables, & sync channels (left hand side) not implemented yet.
+// For the future: instead of this awkward overriding of the Value class, make parameters
+// use the Identifier class like regular variables (this requires changing the assignment &
+// constraint classes to accept either a Value or an Identifier). Makes the meaning more clear.
+// Then add the replaceParameters fn to Clock, Variable, & Sync classes.
+// ^that might require the compiler to check that the param is used in the right place?
+// ^hard because no type support currently exists.
+// Might require making replaceParameters mandatory for every subclass of Expression.
+// think about adding final parser pass over final TAs to make sure they are parameter-free?
+
+
  ta returns [SystemDecl systemret]  @init { 	
  		declarations = new HashMap<>();
  	 	currentTaDeclarations = new HashMap<>();
@@ -84,7 +101,7 @@ import operators.*;
  	
  	(
 	 
- 
+
  		
  		dec = declaration
  		{
@@ -100,7 +117,32 @@ import operators.*;
  			
 		}
 
- 	)* instantiation* system+ EOF
+ 	)*
+ 	(
+ 	    instantiation
+ 	    {
+ 	                    TA template = null;
+             	        for (TA t: timedAutomata) {
+             	            if (t.getIdentifier().equals($instantiation.templateName)) template = t;
+             	        }
+             	        if (template == null) {
+             	            throw new IllegalStateException ("Line: "+_localctx.start.getLine()+
+                                    "\t Template does not exist:"+$instantiation.templateName);
+                        }
+                        List<String> params = template.getParameters();
+                        if ($instantiation.argumentList.size() > params.size()) {
+                            throw new IllegalStateException ("Line: "+_localctx.start.getLine()+
+                                    "\t Too many parameters, template accepts "+params.size());
+                        }
+                        Map<String, Value> parameterMap = new HashMap<>();
+                        for (int i=0; i < $instantiation.argumentList.size(); i++) {
+                            parameterMap.put(params.get(i), new Value(Integer.toString($instantiation.argumentList.get(i).evaluate())));
+                        }
+                        TA timedAutomaton = template.replaceParameters($instantiation.name, parameterMap);
+ 	                    timedAutomata.add(timedAutomaton);
+ 	    }
+ 	)* system+ EOF
+ 	//^None of this info is actually used?!?
  	{
  		
  		if(variableinitializationret!=null){
@@ -128,7 +170,9 @@ import operators.*;
 				 clockDeclaration.add(new ClockDecl("clock",  entry.getKey(), entry.getValue()));
 			}
 		}
-		$systemret= new SystemDecl(timedAutomata, clockDeclaration, variableDeclaration);
+		$systemret= new SystemDecl(timedAutomata.stream()
+		            .filter(ta -> ta.complete == true)
+		            .collect(Collectors.toSet()), clockDeclaration, variableDeclaration);
 	}
  ;
 
@@ -164,9 +208,18 @@ import operators.*;
 
  ;
 
- instantiation
+ instantiation returns [String name, String templateName, List<Expression> argumentList]
  :
- 	ID declarationid ID LPAR argList RPAR ';'
+ 	(
+ 	    newName = ID EQ tName = ID LPAR argList RPAR ';'
+ 	    {
+ 	        $name = $newName.text;
+ 	        $templateName = $tName.text;
+ 	        $argumentList = $argList.args;
+
+
+ 	    }
+ 	)
  ;
 
  system
@@ -177,31 +230,49 @@ import operators.*;
  	)* ';'
  ;
 
- parameterList
+ parameterList returns [ArrayList<String> params] @init {
+    $params = new ArrayList<String>();
+ }
  :
  	(
- 		LPAR parameter
+ 		LPAR param1 = parameter
+ 		{
+ 		    $params.add($param1.param.getName());
+ 		}
  		(
- 			',' parameter
+ 			',' nextParam = parameter
+ 			{
+ 			    if ($params.contains($nextParam.param.getName())) {
+ 			        throw new IllegalStateException ("Line: "+_localctx.start.getLine()+
+ 			                "\t Duplicate parameter definition:"+$nextParam.param.getName());
+ 			    }
+ 			    $params.add($nextParam.param.getName());
+ 			}
  		)* RPAR
  	)?
  ;
 
- parameter
+ parameter returns [Variable param]
  :
+    // Note: currently the parser has no type or array support,
+    // so only the name matters for now.
  	type
  	(
  		BITAND
- 	)? ID arrayDecl*
+ 	)? ID{$param = new Variable($ID.text);} arrayDecl*
  ;
 
  procDecl returns [TA timedAutomaton]
  :
- 	'process' ID{currentProc=$ID.text;} parameterList '{' procBody '}'
+ //TODO: add check for parameter refs in procBody
+ 	'process' ID{currentProc=$ID.text;} parameterList
+ 	 {
+ 	     currentParameters = $parameterList.params;
+ 	 }
+ 	 '{' procBody '}'
  	{
-	
-	
-	 String taID=$ID.text;
+
+ 	 String taID=$ID.text;
 	 cleanCurrentTA();
 	 Map<String, String> variabledeclret=$procBody.variabledeclret;
 	 
@@ -252,8 +323,7 @@ import operators.*;
 			 clockDeclaration.add(new ClockDecl("clock",  entry.getKey(), entry.getValue()));
 		}
 	}
-		
-	$timedAutomaton=new TA($ID.text, null, $procBody.stateset, $procBody.transitionsetret, $procBody.initstate, clocks,variables, variableDeclaration, clockDeclaration);
+	$timedAutomaton=new TA($ID.text, null, $procBody.stateset, $procBody.transitionsetret, $procBody.initstate, clocks,variables, variableDeclaration, clockDeclaration, $parameterList.params);
 }
  ;
 
@@ -799,6 +869,9 @@ boundedVariableDecl returns
 
  constraintAtom returns
  [ClockConstraintAtom atom, VariableConstraintAtom variableAtom]
+ @init {
+     Value value = new Value("0");
+  }
  :
  	id = ID op =
  	(
@@ -807,12 +880,26 @@ boundedVariableDecl returns
  		| GEQ
  		| LE
  		| LEQ
- 	) value = NAT
+ 	)
+ 	(
+ 	    nat = NAT
+        {
+            value = new Value($nat.text);
+        }
+        | param = ID
+        {
+            value = new Value($param.text, true);
+        }
+ 	)
  	{
 		
 		if(declarations==null){
 			throw new InternalError("The set of the declarations cannot be null");	
 		}
+		if (value.parameter != null && !currentParameters.contains(value.parameter)) {
+            throw new IllegalStateException ("Line: "+_localctx.start.getLine()+"\t Param:"+value.parameter+" not declared");
+        }
+
 		String identifier=$id.text;
 		if(!declarations.containsKey($id.text) && 
 		!boundedVariablesValues.containsKey($id.text) &&
@@ -822,11 +909,11 @@ boundedVariableDecl returns
 		
 		
 		if((declarations.containsKey(identifier))&&(declarations.get(identifier).equals("clock")) || (currentTaDeclarations!=null && currentTaDeclarations.containsKey(identifier))&&(currentTaDeclarations.get(identifier).equals("clock"))){
-			$atom=new ClockConstraintAtom(new Clock($id.text), ClockConstraintAtomOperator.parse($op.text), Integer.parseInt($value.text));
+			$atom=new ClockConstraintAtom(new Clock($id.text), ClockConstraintAtomOperator.parse($op.text), value);
 		}
 		if((declarations.containsKey(identifier))&&(declarations.get(identifier).equals("int")) || (currentTaDeclarations!=null && currentTaDeclarations.containsKey(identifier))&&(currentTaDeclarations.get(identifier).equals("int"))){
 
-			$variableAtom=new VariableConstraintAtom(new Variable($id.text), VariableConstraintAtomOperator.parse($op.text), Integer.parseInt($value.text));
+			$variableAtom=new VariableConstraintAtom(new Variable($id.text), VariableConstraintAtomOperator.parse($op.text), value);
 		}
 	}
 
@@ -907,13 +994,26 @@ boundedVariableDecl returns
 
  assignment returns
  [ClockAssignement clockassignementsret, VariableAssignement variableAssignementret]
+ @init {
+    Value value = new Value("0");
+ }
  :
  	(
  		id = ID op =
  		(
  			EQASSIGN
  			| EQ
- 		) nat = NAT
+ 		)
+ 		(
+ 		    nat = NAT
+ 		    {
+ 		        value = new Value($nat.text);
+ 		    }
+ 		    | param = ID
+ 		    {
+ 		        value = new Value($param.text, true);
+ 		    }
+ 		)
  	)
  	{
  			if(declarations==null){
@@ -923,11 +1023,14 @@ boundedVariableDecl returns
 		if(!declarations.containsKey($id.text) && (currentTaDeclarations==null || !currentTaDeclarations.containsKey($id.text))){
 			throw new IllegalStateException ("Line: "+_localctx.start.getLine()+"\t Variable:"+$id.text+" not defined");
 		}
+		if (value.parameter != null && !currentParameters.contains(value.parameter)) {
+		    throw new IllegalStateException ("Line: "+_localctx.start.getLine()+"\t Param:"+value.parameter+" not declared");
+		}
 		if((declarations.containsKey(identifier))&&(declarations.get(identifier).equals("clock")) || (currentTaDeclarations!=null && currentTaDeclarations.containsKey(identifier))&&(currentTaDeclarations.get(identifier).equals("clock"))){
-			$clockassignementsret=new ClockAssignement(new Clock($id.text), new Value($nat.text));
+			$clockassignementsret=new ClockAssignement(new Clock($id.text), value);
 		}
 		if((declarations.containsKey(identifier))&&(declarations.get(identifier).equals("int")) || (currentTaDeclarations!=null && currentTaDeclarations.containsKey(identifier))&&(currentTaDeclarations.get(identifier).equals("int"))){
-			$variableAssignementret=new VariableAssignement(new Variable($id.text), new Value($nat.text));
+			$variableAssignementret=new VariableAssignement(new Variable($id.text), value);
 		}
  	}
 
@@ -1174,12 +1277,15 @@ boundedVariableDecl returns
  		expression
  		(
  			',' argList
- 		)*
+ 			{
+ 			    $args.addAll($argList.args);
+ 			}
+ 		)?
  	)
  	{
 				$args.add($expression.exp);
-				$args.addAll($argList.args);
-			}
+
+	}
 
  	|
  ;

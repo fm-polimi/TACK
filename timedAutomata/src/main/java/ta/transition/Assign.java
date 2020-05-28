@@ -1,5 +1,6 @@
 package ta.transition;
 
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
@@ -8,6 +9,7 @@ import com.google.common.base.Preconditions;
 
 import ta.Clock;
 import ta.Variable;
+import ta.expressions.Value;
 import ta.transition.assignments.ClockAssignement;
 import ta.transition.assignments.VariableAssignement;
 
@@ -39,6 +41,16 @@ public class Assign {
 
 	public Set<Variable> assignedVariables(){
 		return this.variableassigments.stream().map(v -> v.getVariable()).collect(Collectors.toSet());
+	}
+
+	public Assign replaceParameters(Map<String, Value> parameterMap) {
+		Set<ClockAssignement> newClockAssignments = clockassigments.stream().map(ca -> {
+			return ca.replaceParameters(parameterMap);
+		}).collect(Collectors.toSet());
+		Set<VariableAssignement> newVariableAssignments = variableassigments.stream().map(va -> {
+			return va.replaceParameters(parameterMap);
+		}).collect(Collectors.toSet());
+		return new Assign(newClockAssignments, newVariableAssignments);
 	}
 	/**
 	 * {@inheritDoc}

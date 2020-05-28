@@ -1,4 +1,4 @@
-// Generated from MITLI.g4 by ANTLR 4.6
+// Generated from MITLI.g4 by ANTLR 4.8
 
 package formulae.mitli.parser;
 
@@ -23,7 +23,7 @@ import java.util.ArrayList;
 
 @SuppressWarnings({"all", "warnings", "unchecked", "unused", "cast"})
 public class MITLIParser extends Parser {
-	static { RuntimeMetaData.checkVersion("4.6", RuntimeMetaData.VERSION); }
+	static { RuntimeMetaData.checkVersion("4.8", RuntimeMetaData.VERSION); }
 
 	protected static final DFA[] _decisionToDFA;
 	protected static final PredictionContextCache _sharedContextCache =
@@ -36,21 +36,30 @@ public class MITLIParser extends Parser {
 		NEWLINE=30, WS=31, COMMENT=32;
 	public static final int
 		RULE_mitli = 0, RULE_logic = 1, RULE_declaration = 2, RULE_fmla = 3, RULE_conjuncts_list = 4;
-	public static final String[] ruleNames = {
-		"mitli", "logic", "declaration", "fmla", "conjuncts_list"
-	};
+	private static String[] makeRuleNames() {
+		return new String[] {
+			"mitli", "logic", "declaration", "fmla", "conjuncts_list"
+		};
+	}
+	public static final String[] ruleNames = makeRuleNames();
 
-	private static final String[] _LITERAL_NAMES = {
-		null, "':def'", null, "'('", "')'", "'['", "']'", "'true'", "'false'", 
-		"'!'", "'&&'", "'||'", "'->'", "'<->'", null, null, null, null, null, 
-		null, "'U'", "'S'", "'R'", "'T'", "'C'", null, "':'", "';'"
-	};
-	private static final String[] _SYMBOLIC_NAMES = {
-		null, null, "OP", "LPAR", "RPAR", "LBRA", "RBRA", "TRUE", "FALSE", "NEG_OP", 
-		"AND_OP", "OR_OP", "IMPL_OP", "IFF_OP", "F_OP", "F_inf_OP", "G_OP", "G_inf_OP", 
-		"P_OP", "H_OP", "UNTIL_OP", "SINCE_OP", "RELEASE_OP", "TRIGGER_OP", "COUNT_OP", 
-		"LOGIC", "COLON", "SEMI", "INT", "ID", "NEWLINE", "WS", "COMMENT"
-	};
+	private static String[] makeLiteralNames() {
+		return new String[] {
+			null, "':def'", null, "'('", "')'", "'['", "']'", "'true'", "'false'", 
+			"'!'", "'&&'", "'||'", "'->'", "'<->'", null, null, null, null, null, 
+			null, "'U'", "'S'", "'R'", "'T'", "'C'", null, "':'", "';'"
+		};
+	}
+	private static final String[] _LITERAL_NAMES = makeLiteralNames();
+	private static String[] makeSymbolicNames() {
+		return new String[] {
+			null, null, "OP", "LPAR", "RPAR", "LBRA", "RBRA", "TRUE", "FALSE", "NEG_OP", 
+			"AND_OP", "OR_OP", "IMPL_OP", "IFF_OP", "F_OP", "F_inf_OP", "G_OP", "G_inf_OP", 
+			"P_OP", "H_OP", "UNTIL_OP", "SINCE_OP", "RELEASE_OP", "TRIGGER_OP", "COUNT_OP", 
+			"LOGIC", "COLON", "SEMI", "INT", "ID", "NEWLINE", "WS", "COMMENT"
+		};
+	}
+	private static final String[] _SYMBOLIC_NAMES = makeSymbolicNames();
 	public static final Vocabulary VOCABULARY = new VocabularyImpl(_LITERAL_NAMES, _SYMBOLIC_NAMES);
 
 	/**
@@ -100,6 +109,7 @@ public class MITLIParser extends Parser {
 		super(input);
 		_interp = new ParserATNSimulator(this,_ATN,_decisionToDFA,_sharedContextCache);
 	}
+
 	public static class MitliContext extends ParserRuleContext {
 		public MITLIFormula formula;
 		public FmlaContext fmla;
@@ -851,7 +861,7 @@ public class MITLIParser extends Parser {
 	}
 
 	public static final String _serializedATN =
-		"\3\u0430\ud6d1\u8206\uad2d\u4417\uaef1\u8d80\uaadd\3\"\u009b\4\2\t\2\4"+
+		"\3\u608b\ua72a\u8133\ub9ed\u417c\u3be7\u7786\u5964\3\"\u009b\4\2\t\2\4"+
 		"\3\t\3\4\4\t\4\4\5\t\5\4\6\t\6\3\2\3\2\3\2\3\3\3\3\3\3\3\3\3\4\3\4\3\4"+
 		"\3\4\3\4\3\4\3\4\5\4\33\n\4\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3"+
 		"\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5"+
@@ -861,7 +871,7 @@ public class MITLIParser extends Parser {
 		"\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5"+
 		"\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\3\5\5\5\u008f"+
 		"\n\5\3\6\3\6\3\6\3\6\3\6\3\6\3\6\3\6\5\6\u0099\n\6\3\6\2\2\7\2\4\6\b\n"+
-		"\2\2\u00a9\2\f\3\2\2\2\4\17\3\2\2\2\6\32\3\2\2\2\b\u008e\3\2\2\2\n\u0090"+
+		"\2\2\2\u00a9\2\f\3\2\2\2\4\17\3\2\2\2\6\32\3\2\2\2\b\u008e\3\2\2\2\n\u0090"+
 		"\3\2\2\2\f\r\5\b\5\2\r\16\b\2\1\2\16\3\3\2\2\2\17\20\7\34\2\2\20\21\7"+
 		"\33\2\2\21\22\b\3\1\2\22\5\3\2\2\2\23\24\7\3\2\2\24\25\7\37\2\2\25\26"+
 		"\5\b\5\2\26\27\b\4\1\2\27\30\7 \2\2\30\33\3\2\2\2\31\33\7 \2\2\32\23\3"+

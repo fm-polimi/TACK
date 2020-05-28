@@ -2,6 +2,7 @@ package ta.transition.guard;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Map;
 
 import operators.PropositionalLogicOperator;
 import ta.Clock;
@@ -9,6 +10,7 @@ import ta.expressions.binary.BinaryExpression;
 import ta.visitors.Expression2CLTLocExpression;
 import ta.visitors.ExpressionVisitor;
 import ta.visitors.TAVisitor;
+import ta.expressions.Value;
 
 public class BinaryClockConstraint extends BinaryExpression<ClockConstraint, PropositionalLogicOperator>
 		implements ClockConstraint {
@@ -31,6 +33,15 @@ public class BinaryClockConstraint extends BinaryExpression<ClockConstraint, Pro
 		return 0;
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public BinaryClockConstraint replaceParameters (Map<String, Value> parameterMap) {
+		//TODO: replace clocks
+	    return new BinaryClockConstraint(this.getLeftChild().replaceParameters(parameterMap),
+					     this.getOperator(), this.getRightChild().replaceParameters(parameterMap));
+	}
 	
 	/**
 	 * {@inheritDoc}

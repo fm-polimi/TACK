@@ -2,8 +2,11 @@ package ta.transition;
 
 import com.google.common.base.Preconditions;
 
+import ta.expressions.Value;
 import ta.state.State;
 import ta.transition.sync.SyncExpression;
+
+import java.util.Map;
 
 public class Transition {
 
@@ -38,7 +41,11 @@ public class Transition {
 		return destination;
 	}
 
-	
+	public Transition replaceParameters(Map<String, Value> parameterMap) {
+		//TODO: if desired, can extend to allow the sync channel to be a parameter
+		return new Transition(source, destination, guard.replaceParameters(parameterMap), sync,
+				assignement.replaceParameters(parameterMap));
+	}
 
 	@Override
 	public int hashCode() {
