@@ -319,6 +319,10 @@ public class TA {
 		return this.clockDeclarations.stream().map(cdc -> new Clock(cdc.getId())).collect(Collectors.toSet());
 	}
 
+	public Set<ClockDecl> getClockDeclarations() {
+		return clockDeclarations;
+	}
+
 	public List<String> getActions() {
 		return Collections.unmodifiableList(actions);
 	}

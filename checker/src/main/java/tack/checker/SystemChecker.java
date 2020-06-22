@@ -14,6 +14,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
+import formulae.cltloc.converters.CLTLoc2zot;
+import formulae.cltloc.visitor.*;
 import org.apache.commons.io.FileUtils;
 
 import com.google.common.base.Preconditions;
@@ -26,10 +28,6 @@ import formulae.cltloc.atoms.CLTLocClock;
 import formulae.cltloc.atoms.Signal;
 import formulae.cltloc.atoms.Variable;
 import formulae.cltloc.operators.unary.CLTLocYesterday;
-import formulae.cltloc.visitor.GetClocksVisitor;
-import formulae.cltloc.visitor.GetSignalVisitor;
-import formulae.cltloc.visitor.GetVariablesVisitor;
-import formulae.cltloc.visitor.ZotPlugin;
 import formulae.mitli.MITLIFormula;
 import formulae.mitli.atoms.MITLIPropositionalAtom;
 import formulae.mitli.atoms.MITLIRelationalAtom;
@@ -42,6 +40,7 @@ import ta.SystemDecl;
 import ta.TA;
 import ta.VariableAssignementAP;
 import ta.expressions.Value;
+import ta.visitors.TANetwork2Ae2sbvzot;
 import ta.visitors.TANetwork2CLTLoc;
 import ta.visitors.TANetwork2CLTLocO;
 import ta.visitors.TANetwork2CLTLocRC;
@@ -191,6 +190,7 @@ public class SystemChecker {
 		FileUtils.writeStringToFile(binding, vocabularyBuilder.toString());
 
 		out.println("************************************************");
+		out.println(vocabularyBuilder.toString());
 		out.println("************************************************");
 		out.println("Converting the TA in CLTLoc");
 
@@ -198,10 +198,14 @@ public class SystemChecker {
 		timer.start();
 
 		final TANetwork2CLTLoc conv = converter;
+		final TANetwork2Ae2sbvzot smtConv= new TANetwork2Ae2sbvzot(system, atomicpropositions, atomicpropositionsVariable, bound);
 
 		taFormula = converter.convert(system, atomicpropositions, atomicpropositionsVariable);
 
 		out.println("TA converted in CLTLoc");
+		out.println("EXPERIMENTAL: Converting TA to SMT");
+		out.println("************************************************");
+		out.println(smtConv.convert());
 
 		timer.stop();
 		this.ta2clclocTime = timer.elapsed(TimeUnit.MILLISECONDS);
@@ -229,6 +233,10 @@ public class SystemChecker {
 		out.println("Creating the CLTLoc formulae of the model and the property");
 		CLTLocFormula conjunctionFormula = new CLTLocYesterday(
 				CLTLocFormula.getAnd(taFormula, formula, additionalConstraints));
+//		System.out.println(taFormula.accept(new NicelyIndentToString()));
+//		System.out.println(" ");
+//		String zotEncoding = new CLTLoc2zot(bound, taFormula.accept(new CLTLocGetMaxBound()), ZotPlugin.AE2ZOT).apply(taFormula);
+//		System.out.println(zotEncoding);
 		out.println("Conjunction of the formulae created");
 
 		out.println("Running ZOT... This might take a while");
