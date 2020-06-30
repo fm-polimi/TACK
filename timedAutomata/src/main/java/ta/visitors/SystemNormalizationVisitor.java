@@ -5,6 +5,9 @@ import ta.declarations.BoundedVariableDecl;
 import ta.declarations.ClockDecl;
 import ta.declarations.VariableDecl;
 import ta.expressions.EmptyExpression;
+import ta.expressions.Identifier;
+import ta.state.ExpInvariant;
+import ta.state.Invariant;
 import ta.state.State;
 import ta.transition.Assign;
 import ta.transition.Guard;
@@ -45,6 +48,12 @@ public class SystemNormalizationVisitor {
         Set<VariableAssignementAP> variableAssignementAPs = container.variableAssignementAPs;
 
         Map<TA, Map<String, State>> mapStringState = new HashMap<>();
+        // Sets of Global & local clocks, modified to have a unique naming scheme
+        // 'c_' is prepended to the names of global clocks
+        // 'cl_[TA-id]_' is prepended to the names of local clocks
+        // although the parser guarantees that all variable names are unique,
+        // the TA template feature means that TAs derived from the same template will have
+        // local clocks with the same name
         Map<String,ClockDecl> globalClockMap = new HashMap<>();
         Map<TA,Map<String,ClockDecl>> localClockMap = new HashMap<>();
         Map<String, VariableDecl> globalVariableMap = new HashMap<>();
@@ -81,9 +90,8 @@ public class SystemNormalizationVisitor {
             Set<VariableDecl> localVarsOnly = new HashSet<>();
             Set<ClockDecl> localClocksOnly = new HashSet<>();
             for (ClockDecl c : ta.getClockDeclarations()) {
-                localClockMap.get(ta).put(c.getId(), new ClockDecl(c.getType(), "cl_" + ta.getId() + "_" +
+                localClockMap.get(ta).put(c.getId(), new ClockDecl(c.getType(), "cl_" + ta.getIdentifier() + "_" +
                         c.getId(), c.getValue()));
-                //mapClockTA.put("cl_" + ta.getId() + "_" + c.getId(),ta);
             }
             // localClocksOnly is used to create new normalized TA
             localClocksOnly.addAll(localClockMap.get(ta).values());
@@ -94,9 +102,9 @@ public class SystemNormalizationVisitor {
                 if (v instanceof BoundedVariableDecl) {
                     BoundedVariableDecl  bv = (BoundedVariableDecl) v;
                     localVariableMap.get(ta).put(bv.getId(), new BoundedVariableDecl(bv.getType(), "vl_" +
-                            ta.getId() + "_" + bv.getId(), bv.getExp(), bv.getValues()));
+                            ta.getIdentifier() + "_" + bv.getId(), bv.getExp(), bv.getValues()));
                 } else {
-                    localVariableMap.get(ta).put(v.getId(), new VariableDecl(v.getType(), "vl_" + ta.getId() + "_" +
+                    localVariableMap.get(ta).put(v.getId(), new VariableDecl(v.getType(), "vl_" + ta.getIdentifier() + "_" +
                             v.getId(), v.getExp()));
                 }
             }
@@ -105,7 +113,14 @@ public class SystemNormalizationVisitor {
             localVariableMap.get(ta).putAll(globalVariableMap);
 
             Set<State> newStates = ta.getStates().stream().map(s -> {
-                State newState = new State("state_" + ta.getId() + "_" + s.getStringId(), s.getInvariant());
+                Invariant inv = s.getInvariant();
+                if (inv instanceof ExpInvariant) {
+                    ExpInvariant eInv = (ExpInvariant) inv;
+                    // currently Inv.exp is assumed to be a constant value
+                    inv = new ExpInvariant(new Identifier(localClockMap.get(ta).get(eInv.getId().getId()).getId()),
+                            eInv.getOperator(), eInv.getExp());
+                }
+                State newState = new State("state_" + ta.getIdentifier() + "_" + s.getStringId(), inv);
                 mapStringState.get(ta).put(s.getStringId(), newState);
                 return newState;
             }).collect(Collectors.toSet());
