@@ -17,7 +17,7 @@ public class State extends ModelElement {
 
 	public State(String stateId, Invariant invariant) {
 		Preconditions.checkNotNull(stateId, "The id of the state cannot be null");
-		Preconditions.checkNotNull(invariant, "The invariant cannto be null");
+		Preconditions.checkNotNull(invariant, "The invariant cannot be null");
 		this.stateId = stateId;
 		this.invariant = invariant;
 		
