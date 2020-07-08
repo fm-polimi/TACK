@@ -75,7 +75,7 @@ public class SystemNormalizationVisitor {
         // Rewrite variables in declaration expressions
         ExpressionVariableRenamingVisitor globalRenaming = new ExpressionVariableRenamingVisitor(globalVariableMap);
         globalVariableMap = globalVariableMap.entrySet().stream().map(e -> new AbstractMap.SimpleEntry<>(e.getKey(),
-                new VariableDecl(e.getValue().getType(), e.getValue().getId(), globalRenaming.visit(e.getValue().getExp()))))
+                        rewriteVariableDeclExpression(e.getValue(),globalRenaming)))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a,b) -> a));
 
         Set<ClockDecl> newClockDecl = new HashSet<>(globalClockMap.values());
@@ -108,7 +108,12 @@ public class SystemNormalizationVisitor {
                             v.getId(), v.getExp()));
                 }
             }
-            // declaration expression rewriting not needed until end
+            // Rewrite variables in declaration expressions, same as in global map above
+            ExpressionVariableRenamingVisitor localRenaming = new ExpressionVariableRenamingVisitor(localVariableMap.get(ta));
+            localVariableMap.put(ta, localVariableMap.get(ta).entrySet().stream().map(e -> new AbstractMap.SimpleEntry<>(e.getKey(),
+                    rewriteVariableDeclExpression(e.getValue(),localRenaming)))
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a,b) -> a)));
+            // localVarsOnly is used to create new TA class, localVariableMap.get(ta) is used to rewrite expressions
             localVarsOnly.addAll(localVariableMap.get(ta).values());
             localVariableMap.get(ta).putAll(globalVariableMap);
 
@@ -140,13 +145,6 @@ public class SystemNormalizationVisitor {
                     .collect(Collectors.toSet());
 
             State newInitialState = mapStringState.get(ta).get(ta.getInitialState().getStringId());
-
-            // Rewrite declaration expressions
-            // Note: we are doing this 'late' because the assignment expressions are never used in this class
-            // If that changes we will need to call this normalization procedure when localVarsOnly is created
-            localVarsOnly = localVarsOnly.stream().map(v ->
-                    new VariableDecl(v.getType(), v.getId(), new ExpressionVariableRenamingVisitor(localVariableMap.get(ta))
-                            .visit(v.getExp()))).collect(Collectors.toSet());
 
             newTA.add(new TA(ta.getIdentifier(), ta.getAtomicPropositions(), newStates, newTrans, newInitialState,
                     newClocks, newVariables, localVarsOnly, localClocksOnly));
@@ -191,6 +189,15 @@ public class SystemNormalizationVisitor {
                 new VariableConstraintAtom(new Variable(variableMap.get(v.getVariable().getName()).getId()),
                         v.getOperator(),v.getValue())).collect(Collectors.toSet());
         return new Guard(vc,cc);
+    }
+
+    private static VariableDecl rewriteVariableDeclExpression(VariableDecl v, ExpressionVariableRenamingVisitor renamingVisitor) {
+        if (v instanceof BoundedVariableDecl) {
+            BoundedVariableDecl bv = (BoundedVariableDecl) v;
+            return new BoundedVariableDecl(v.getType(), v.getId(), renamingVisitor.visit(v.getExp()), bv.getValues());
+        } else {
+            return new VariableDecl(v.getType(), v.getId(), renamingVisitor.visit(v.getExp()));
+        }
     }
 
     //TODO: need to recurse on VariableAssignment value, it is an expression that can contain other Variable names

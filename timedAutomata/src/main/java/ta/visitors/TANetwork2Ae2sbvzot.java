@@ -176,11 +176,8 @@ public class TANetwork2Ae2sbvzot {
         constraints.append(assertExp("(<= i-loop " + (vecSize-2) + ")"));
         constraints.append(assertExp("(<= 0 i-loop)"));
         declarations.append("(define-fun inloop () "+vectorType+"\n"+
-                "    (bvand (bvnot (bvshl one ((_ int2bv " + vecSize + ") " + (vecSize -1) +"))) (bvor");
-        for (int i = 0; i<(vecSize -1); i++) {
-            declarations.append(" (bvshl (bvshl one i_loop) ((_ int2bv " + vecSize + ") " + i + "))");
-        }
-        declarations.append(")))\n");
+                "    (bvand (bvnot (bvshl one ((_ int2bv " + vecSize + ") " + (vecSize -1) +"))) " +
+                "(bvshl (bvnot (_ bv0 " + vecSize + ")) i_loop)))\n");
 
         declarations.append("(define-fun loopex () Bool\n" +
                 "    (not (= 0 i-loop)))\n");
@@ -238,9 +235,9 @@ public class TANetwork2Ae2sbvzot {
                 assigningTransitions.addAll(getClockAssigningTransitionIds(ta, cId));
             }
             //just in case there are 0 matches, add 'false'
-            TimedExpression noAssignment = (i) -> "(not (or false" +
-                    assigningTransitions.stream().map(s -> " (= ((_ extract " + i + " " + i + ") " + s + ") #b1)")
-                            .collect(Collectors.joining()) + "))";
+            TimedExpression noAssignment = (i) -> "(= ((_ extract " + i + " " + i + ") (bvnot (bvor zeros" +
+                    assigningTransitions.stream().map(s -> " " + s)
+                            .collect(Collectors.joining()) + "))) #b1)";
             constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions(
                     "=>",
                     noAssignment,
@@ -274,13 +271,14 @@ public class TANetwork2Ae2sbvzot {
             if (v instanceof BoundedVariableDecl) {
                 BoundedVariableDecl bv = (BoundedVariableDecl) v;
                 String value = "";
-                int bits = intToNumBits(Collections.max(bv.getValues()));
+                //TODO: negative values
+                int bits = intToNumBits(Collections.max(bv.getValues())+1);
                 for (int i = 0; i < bits; i++) {
                     declarations.append("(declare-fun b" + bv.getId() + "_" + i + " () " + vectorType + ")\n");
                     // least significant bits on the right
-                    value = " ((_ extract i i) b" + bv.getId() + "_" + i +"))" + value;
+                    value = " (getbit b" + bv.getId() + "_" + i +" ((_ int2bv " + vecSize + ") i))" + value;
                 }
-                declarations.append("(define-fun " + bv.getId() + " ((i Int)) " + vectorType + "\n" +
+                declarations.append("(define-fun " + bv.getId() + " ((i Int)) (_ BitVec " + bits + ")\n" +
                         "    (concat" + value + "))\n");
             }
 
@@ -294,13 +292,26 @@ public class TANetwork2Ae2sbvzot {
             for (TA ta: system.getTimedAutomata()) {
                 assigningTransitions.addAll(getVariableAssigningTransitionIds(ta, vId));
             }
-            TimedExpression noAssignment = (i) -> "(not (or false" +
-                    assigningTransitions.stream().map(s -> " (= ((_ extract " + i + " " + i + ") " + s + ") #b1)")
-                    .collect(Collectors.joining()) + "))";
-            constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions(
-                    "=>",
-                    noAssignment,
-                    (i) -> "(= (" + vId + " " + (i+1) + ") (" + vId + " " + i + "))")),0,vecSize-1));
+            if (var instanceof BoundedVariableDecl) {
+                BoundedVariableDecl bvar = (BoundedVariableDecl) var;
+                int bits = intToNumBits(Collections.max(bvar.getValues())+1);
+                String noAssignment = "(bvnot (bvor zeros" +
+                        assigningTransitions.stream().map(s -> " " + s).collect(Collectors.joining()) + "))";
+                String vbits = "";
+                for (int i = 0; i < bits; i++) {
+                    String bId = "b" + bvar.getId() + "_" + i;
+                    vbits += " (bviff (getprev " + bId + ") (getnext " + bId + "))";
+                }
+                constraints.append(assertExp("(eqones (bvimpl " + noAssignment + " (bvand" + vbits + ")))"));
+            } else {
+                TimedExpression noAssignment = (i) -> "(not (or false" +
+                        assigningTransitions.stream().map(s -> " (= ((_ extract " + i + " " + i + ") " + s + ") #b1)")
+                                .collect(Collectors.joining()) + "))";
+                constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions(
+                        "=>",
+                        noAssignment,
+                        (i) -> "(= (" + vId + " " + (i + 1) + ") (" + vId + " " + i + "))")), 0, vecSize - 1));
+            }
         }
 
 
@@ -404,9 +415,9 @@ public class TANetwork2Ae2sbvzot {
                     VariableDecl v = variableMap.get(varId);
                     if (v instanceof BoundedVariableDecl) {
                         BoundedVariableDecl bv = (BoundedVariableDecl) v;
-                        int bits = intToNumBits(Collections.max(bv.getValues()));
+                        //TODO: concat bits to get desired var state
                         constraints.append(assertExp("(eqones (bvimpl (getprev " + genTransition(ta,t) + ") (getnext " +
-                                varId + "_" + value + ")))"));
+                                boundedVariableAssign(bv,value) + ")))"));
                     } else {
                         constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>", transBit,
                                 (i) -> "(= (" + varId + " " + (i + 1) + ") " + value + ")")), 0, vecSize - 1));
@@ -547,7 +558,7 @@ public class TANetwork2Ae2sbvzot {
         VariableDecl v = variableMap.get(constraint.getVariable().getName());
         if (v instanceof BoundedVariableDecl) {
             BoundedVariableDecl bv = (BoundedVariableDecl) v;
-            int bits = intToNumBits(Collections.max(bv.getValues()));
+            int bits = intToNumBits(Collections.max(bv.getValues())+1);
             String boundedOperator;
             switch (operator) {
                 case "<": boundedOperator = "bvult"; break;
@@ -556,7 +567,7 @@ public class TANetwork2Ae2sbvzot {
                 case ">=": boundedOperator = "bvuge"; break;
                 default: boundedOperator = finalOperator;
             }
-            return (i) -> "(" + boundedOperator + "(" + varId + " " + i + ") " + "(_ bv" + value + " " + bits + "))";
+            return (i) -> "(" + boundedOperator + " (" + varId + " " + i + ") " + "(_ bv" + value + " " + bits + "))";
         } else {
             //Unbounded
             return (i) -> "(" + finalOperator + " (" + varId + " " + i + ") " + value + ")";
@@ -597,7 +608,6 @@ public class TANetwork2Ae2sbvzot {
 
     private ClockConstraintAtom invariantTransformer(ExpInvariant inv) {
         //TODO: maybe do everyone a favor and fix this dumb Identifier/Value/Expression confusion
-        //this is so dumb... so, so dumb
         return new ClockConstraintAtom(new Clock(inv.getId().getId()), ClockConstraintAtom.ClockConstraintAtomOperator.parse(inv.getOperator()),
                 inv.getExp().evaluate());
 
@@ -606,6 +616,18 @@ public class TANetwork2Ae2sbvzot {
     private String genTransition(TA ta, Transition t) {
         int tId = mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta, t));
         return "trans_" + ta.getIdentifier() + "_" + tId;
+    }
+
+    private String boundedVariableAssign(BoundedVariableDecl bv, int value) {
+        int bits = intToNumBits(Collections.max(bv.getValues())+1);
+        StringBuilder res = new StringBuilder();
+        res.append("(bvand");
+        for (int i=0; i<bits; i++) {
+            res.append(" (bviff b" + bv.getId() + "_" + i + " " + ((value & 1) > 0 ? "ones" : "zeros") + ")");
+            value = value >>> 1;
+        }
+        res.append(")");
+        return res.toString();
     }
 
     private String genTransitionBits(TA ta, Transition t) {
