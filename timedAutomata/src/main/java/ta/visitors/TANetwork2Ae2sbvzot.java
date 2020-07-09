@@ -6,6 +6,7 @@ import ta.declarations.BoundedVariableDecl;
 import ta.declarations.ClockDecl;
 import ta.declarations.VariableDecl;
 import ta.state.EmptyInvariant;
+import ta.transition.Assign;
 import ta.state.ExpInvariant;
 import ta.state.Invariant;
 import ta.state.State;
@@ -16,6 +17,8 @@ import ta.transition.assignments.VariableAssignement;
 import ta.transition.guard.ClockConstraint;
 import ta.transition.guard.ClockConstraintAtom;
 import ta.transition.guard.VariableConstraintAtom;
+import ta.transition.sync.SyncExpression;
+
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -161,18 +164,19 @@ public class TANetwork2Ae2sbvzot {
                 "    (= zeros A))\n");
         declarations.append("(define-fun eqones ((A "+vectorType+")) Bool\n" +
                 "    (= ones A))\n");
-        declarations.append("(define-fun bviff ((A "+vectorType+") (B "+vectorType+")) "+vectorType+"\n" +
-                "    (bvxnor A B))\n");
-        declarations.append("(define-fun bvimpl ((A "+vectorType+") (B "+vectorType+")) "+vectorType+"\n" +
-                "    (bvor (bvnot A) B))\n");
+//        declarations.append("(define-fun bviff ((A "+vectorType+") (B "+vectorType+")) "+vectorType+"\n" +
+//                "    (bvxnor A B))\n");
+//        declarations.append("(define-fun bvimpl ((A "+vectorType+") (B "+vectorType+")) "+vectorType+"\n" +
+//                "    (bvor (bvnot A) B))\n");
         declarations.append("(define-fun getprev ((A "+vectorType+")) "+vectorType+"\n" +
                 "    ((_ zero_extend 1) ((_ extract " + (vecSize-2) + " 0) A)))\n");
         declarations.append("(define-fun getnext ((A "+vectorType+")) "+vectorType+"\n" +
                 "    ((_ zero_extend 1) ((_ extract " + (vecSize-1) + " 1) A)))\n");
 
         // I-loop
-        declarations.append("(declare-fun i_loop () " + vectorType + ")\n");
+        //declarations.append("(declare-fun i_loop () " + vectorType + ")\n");
         declarations.append("(declare-fun i-loop () Int)\n");
+        declarations.append("(assert (= (bv2int i_loop) i-loop))\n");
         constraints.append(assertExp("(<= i-loop " + (vecSize-2) + ")"));
         constraints.append(assertExp("(<= 0 i-loop)"));
         declarations.append("(define-fun inloop () "+vectorType+"\n"+
@@ -185,10 +189,10 @@ public class TANetwork2Ae2sbvzot {
         // We could iterate over all possible values of i_loop, 0-bound
         declarations.append("(assert (= ((_ int2bv " + vecSize + ") i-loop) i_loop))\n");
         // loopConF
-        declarations.append("(define-fun getbit ((x "+vectorType+") (index "+vectorType+")) (_ BitVec 1)\n" +
-                "    ((_ extract 0 0) (bvlshr x index)))\n");
-        declarations.append("(define-fun loopConF ((x "+vectorType+")) Bool\n" +
-                "    (= (getbit x i_loop) ((_ extract "+(vecSize -1) + " " + (vecSize -1) + ") x)))\n");
+//        declarations.append("(define-fun getbit ((x "+vectorType+") (index "+vectorType+")) (_ BitVec 1)\n" +
+//                "    ((_ extract 0 0) (bvlshr x index)))\n");
+//        declarations.append("(define-fun loopConF ((x "+vectorType+")) Bool\n" +
+//                "    (= (getbit x i_loop) ((_ extract "+(vecSize -1) + " " + (vecSize -1) + ") x)))\n");
 
         //At least 1 TA must transition
         constraints.append("(assert (eqzeros (bvand");
@@ -198,6 +202,7 @@ public class TANetwork2Ae2sbvzot {
         constraints.append(")))\n");
 
         //APs
+        constraints.append("\n; APs\n");
         for (StateAP stateAP: this.propositionsOfInterest) {
             String taName = stateAP.getAutomata();
             String stateName = stateAP.getState();
@@ -207,13 +212,25 @@ public class TANetwork2Ae2sbvzot {
                 throw new IllegalArgumentException("Non-existant TA in model Property: "+taName);
             }
             // The zot code declares this with declare-fun, so for compatibility we can't use define-fun
-            declarations.append("(declare-fun h_" + apId + " () "+vectorType+")\n");
-            constraints.append(assertExp("(= h_" + apId + " " +
-                    stateName + ")"));
-           declarations.append("(declare-fun p_" + apId + " () "+vectorType+")\n");
-            declarations.append(assertExp("(= p_" + apId + " " +
+            // declarations.append("(declare-fun h_" + apId + " () "+vectorType+")\n");
+            constraints.append(assertExp("(= h_" + apId + " " + stateName + ")"));
+            // declarations.append("(declare-fun p_" + apId + " () "+vectorType+")\n");
+            constraints.append(assertExp("(= p_" + apId + " " +
                     "(bvor (bvand one h_" + apId + ") (bvshl h_" + apId + " one)))"));
-            //        "    (ite (= t 0.0) (h_" + apId + " 0.0) (h_" + apId + " (- t 1))))\n");
+        }
+        for (VariableAssignementAP varAP: this.atomicpropositionsVariable) {
+            String varName = varAP.getVariable().getName();
+            VariableDecl vd = variableMap.get(varName);
+            int value = varAP.getValue().evaluate();
+            int apId = varAP.getEncodingSymbol();
+            if (vd instanceof BoundedVariableDecl) {
+                String assignment = boundedVariableAssign((BoundedVariableDecl) vd, value);
+                constraints.append(assertExp("(= h_"+apId+" "+assignment+")"));
+                constraints.append(assertExp("(= p_"+apId+" "+
+                        "(bvor (bvand one h_" + apId + ") (bvshl h_" + apId + " one)))"));
+            } else {
+                // TODO: unbounded constraints
+            }
         }
 
         // All Clocks - Declaration
@@ -223,11 +240,11 @@ public class TANetwork2Ae2sbvzot {
                 "(declare-fun c" + c.getId() + " () Int)\n").collect(Collectors.joining()));
         initalizations.append(allClocks.stream().map(c ->
                 assertExp("(= " + c.getValue().evaluate() + " (" + c.getId() + " 0))")).collect(Collectors.joining()));
-        declarations.append("(declare-fun delta (Int) Real)\n");
+        // declarations.append("(declare-fun delta (Int) Real)\n");
 
 
         // Clocks must increase by delta, unless a transition that assigns a value to the clock is fired
-        constraints.append("; Clock progression constraints\n");
+        constraints.append("\n; Clock progression constraints\n");
         for (ClockDecl clock: allClocks) {
             String cId = clock.getId();
             Set<String> assigningTransitions = new HashSet<>();
@@ -251,13 +268,6 @@ public class TANetwork2Ae2sbvzot {
         }
 
 
-        //TODO: separate bounded var declarations
-        // Possibilities to gain speed up
-        // 1. Represent bounded variables as bit vectors, but one bit vector per time position
-        //   a. would be easier to have a bit vector for each time position
-        //   b. but then I would have to change the way that the transitions and states are represented
-        //   c. Needs testing to see which is better
-        // 2. Represent bounded variables as bit vectors, the way states are represented
         //Unbounded Variables - Declaration
         declarations.append("\n; Unbounded Variable Declarations\n");
         declarations.append(allVariables.stream().filter(v -> !(v instanceof BoundedVariableDecl)).map(v ->
@@ -270,22 +280,25 @@ public class TANetwork2Ae2sbvzot {
         for (VariableDecl v: allVariables) {
             if (v instanceof BoundedVariableDecl) {
                 BoundedVariableDecl bv = (BoundedVariableDecl) v;
-                String value = "";
-                //TODO: negative values
-                int bits = intToNumBits(Collections.max(bv.getValues())+1);
+                String intvalue = "";
+                String bitvalue = "";
+                int bits = boundedVariableToNumBits(bv);
                 for (int i = 0; i < bits; i++) {
                     declarations.append("(declare-fun b" + bv.getId() + "_" + i + " () " + vectorType + ")\n");
                     // least significant bits on the right
-                    value = " (getbit b" + bv.getId() + "_" + i +" ((_ int2bv " + vecSize + ") i))" + value;
+                    intvalue = " (getbit b" + bv.getId() + "_" + i +" ((_ int2bv " + vecSize + ") i))" + intvalue;
+                    bitvalue = " (getbit b" + bv.getId() + "_" + i +" v)" + bitvalue;
                 }
                 declarations.append("(define-fun " + bv.getId() + " ((i Int)) (_ BitVec " + bits + ")\n" +
-                        "    (concat" + value + "))\n");
+                        "    (concat" + intvalue + "))\n");
+                declarations.append("(define-fun " + bv.getId() + " ((v "+vectorType+")) (_ BitVec " + bits + ")\n" +
+                        "    (concat" + bitvalue + "))\n");
             }
 
         }
 
 
-        constraints.append("; Variable progression constraints\n");
+        constraints.append("\n; Variable progression constraints\n");
         for (VariableDecl var: allVariables) {
             String vId = var.getId();
             Set<String> assigningTransitions = new HashSet<>();
@@ -294,7 +307,7 @@ public class TANetwork2Ae2sbvzot {
             }
             if (var instanceof BoundedVariableDecl) {
                 BoundedVariableDecl bvar = (BoundedVariableDecl) var;
-                int bits = intToNumBits(Collections.max(bvar.getValues())+1);
+                int bits = boundedVariableToNumBits(bvar);
                 String noAssignment = "(bvnot (bvor zeros" +
                         assigningTransitions.stream().map(s -> " " + s).collect(Collectors.joining()) + "))";
                 String vbits = "";
@@ -393,8 +406,15 @@ public class TANetwork2Ae2sbvzot {
                 }
                 Set<VariableConstraintAtom> variableConstraints = g.getConditions();
                 for (VariableConstraintAtom atom: variableConstraints) {
-                    constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>",
-                            transBit, variableGuardParser(atom))),0,vecSize-1));
+                    VariableDecl v = variableMap.get(atom.getVariable().getName());
+                    if (v instanceof BoundedVariableDecl) {
+                        BoundedVariableDecl bv = (BoundedVariableDecl) v;
+                        constraints.append(assertExp("(eqones (bvimpl "+genTransition(ta,t)+" "+
+                                boundedVariableGuardParser(atom)+"))"));
+                    } else {
+                        constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>",
+                                transBit, variableGuardParser(atom))),0,vecSize-1));
+                    }
                 }
             }
 
@@ -415,7 +435,6 @@ public class TANetwork2Ae2sbvzot {
                     VariableDecl v = variableMap.get(varId);
                     if (v instanceof BoundedVariableDecl) {
                         BoundedVariableDecl bv = (BoundedVariableDecl) v;
-                        //TODO: concat bits to get desired var state
                         constraints.append(assertExp("(eqones (bvimpl (getprev " + genTransition(ta,t) + ") (getnext " +
                                 boundedVariableAssign(bv,value) + ")))"));
                     } else {
@@ -554,28 +573,49 @@ public class TANetwork2Ae2sbvzot {
         String value = Integer.toString(constraint.getValue());
         String finalOperator = operator;
 
-        //Bounded Var
-        VariableDecl v = variableMap.get(constraint.getVariable().getName());
-        if (v instanceof BoundedVariableDecl) {
-            BoundedVariableDecl bv = (BoundedVariableDecl) v;
-            int bits = intToNumBits(Collections.max(bv.getValues())+1);
-            String boundedOperator;
-            switch (operator) {
-                case "<": boundedOperator = "bvult"; break;
-                case "<=": boundedOperator = "bvule"; break;
-                case ">": boundedOperator = "bvugt"; break;
-                case ">=": boundedOperator = "bvuge"; break;
-                default: boundedOperator = finalOperator;
+        //Unbounded
+        return (i) -> "(" + finalOperator + " (" + varId + " " + i + ") " + value + ")";
+    }
+
+    private String boundedVariableGuardParser(VariableConstraintAtom constraint) {
+        String varId = constraint.getVariable().getName();
+        String operator = constraint.getOperator().toString();
+        int value = constraint.getValue();
+        BoundedVariableDecl bv = (BoundedVariableDecl) variableMap.get(varId);
+        if (operator.equals("==")) return boundedVariableAssign(bv,value);
+        boolean reverse = (operator.equals("<") || operator.equals("<="));
+        boolean equal = (operator.equals(">=") || operator.equals("<="));
+        int bits = boundedVariableToNumBits(bv);
+        String res = "";
+        for (int i=0; i<bits; i++) {
+            String valueVector = (value & 1)>0 ? "ones" : "zeros";
+            String variableVector = "b" + varId + "_" + i;
+            String left = reverse ? valueVector : variableVector;
+            String right = reverse ? variableVector : valueVector;
+            if (i == 0) {
+                if (equal) res = "(bvimpl " + left + " " + right + ")";
+                else res = "(bvand " + left + " (bvnot " + right + "))";
+            } else if (i == bits-1) {
+                //sign bit - 2s complement
+                // 1 means negative, 0 non-negative
+                // usual ordering is reversed
+                res = "(bvand (bvimpl "+left+" "+right+") (bvor (bvxor "+left+" "+right+") "+res+"))";
+            } else {
+                // we are encoding either left > right or left >= right
+                // equality only matters for the last bit
+                // we take the bvand of two statements:
+                // 1. bvimpl: false iff the right bit is 1 and the left is 0, implying that left < right
+                // 2. bvor: either the left and right bit are different (when combined with statement 1 this implies
+                //          that the left bit is 1 and the right is 0, hence left > right), or we recurse to the next
+                //          bit
+                res = "(bvand (bvimpl "+right+" "+left+") (bvor (bvxor "+left+" "+right+") "+res+"))";
             }
-            return (i) -> "(" + boundedOperator + " (" + varId + " " + i + ") " + "(_ bv" + value + " " + bits + "))";
-        } else {
-            //Unbounded
-            return (i) -> "(" + finalOperator + " (" + varId + " " + i + ") " + value + ")";
+            value = value >> 1;
         }
+        return res;
     }
 
     // Invariants
-
     private TimedExpression clockInvariantParser(ClockConstraintAtom constraint) {
         if (constraint == null) return (i) -> "true";
         String operator = constraint.getOperator().toString();
@@ -619,12 +659,12 @@ public class TANetwork2Ae2sbvzot {
     }
 
     private String boundedVariableAssign(BoundedVariableDecl bv, int value) {
-        int bits = intToNumBits(Collections.max(bv.getValues())+1);
+        int bits = boundedVariableToNumBits(bv);
         StringBuilder res = new StringBuilder();
         res.append("(bvand");
         for (int i=0; i<bits; i++) {
             res.append(" (bviff b" + bv.getId() + "_" + i + " " + ((value & 1) > 0 ? "ones" : "zeros") + ")");
-            value = value >>> 1;
+            value = value >> 1;
         }
         res.append(")");
         return res.toString();
@@ -633,29 +673,18 @@ public class TANetwork2Ae2sbvzot {
     private String genTransitionBits(TA ta, Transition t) {
         int transBits = intToNumBits(ta.getTransitions().size()+1); //+1 is for no transition taken
         int tId = mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta, t));
-        List<String> bits = new LinkedList<>();
+        StringBuilder bits = new StringBuilder();
         for (int i = 0; i < transBits; i++) {
             if ((tId & 1 << i) > 0) {
-                bits.add("t_" + ta.getIdentifier() + "_" + i);
+                bits.append(" t_" + ta.getIdentifier() + "_" + i);
             } else {
-                bits.add("(bvnot " + "t_" + ta.getIdentifier() + "_" + i + ")");
+                bits.append(" (bvnot " + "t_" + ta.getIdentifier() + "_" + i + ")");
             }
         }
-        String result = "";
-        //Unfortunately this isn't lisp, bvand takes *exactly* two arguments
-        //TODO ^not true, bvand will accept any # of args > 0
-        while (bits.size() > 0) {
-            if (bits.size() == 1) {
-                return bits.remove(0);
-            } else {
-                String item1 = bits.remove(0);
-                String item2 = bits.remove(0);
-                bits.add("(bvand " + item1 + " " + item2 + ")");
-            }
-        }
-        return result;
+        return "(bvand" + bits.toString() + ")";
     }
 
+    //TODO: removed from diff, but delete this when stateremove is finished
     private String genStateBits(TA ta, State s) {
         int stateBits = intToNumBits(ta.getStates().size());
         int sId = mapStateId.get(s.getStringId());
@@ -694,5 +723,15 @@ public class TANetwork2Ae2sbvzot {
             b++;
         }
         return b;
+    }
+
+    // Signed logic
+    int boundedVariableToNumBits(BoundedVariableDecl bv) {
+        Set<Integer> values = bv.getValues();
+        int max = Collections.max(values);
+        int min = Collections.min(values);
+        if (min < 0) min = (-1*min)-1;
+        // 2 bit minimum because of how boundedVariableGuardParser works
+        return Math.max(2,intToNumBits(Math.max(max,min)+1)+1);
     }
 }

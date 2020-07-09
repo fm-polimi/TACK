@@ -18,6 +18,7 @@ import ta.transition.guard.BinaryClockConstraint;
 import ta.transition.guard.BinaryVariableConstraint;
 import ta.transition.guard.ClockConstraintAtom;
 import ta.transition.guard.VariableConstraintAtom;
+import ta.transition.sync.SyncExpression;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -37,11 +38,11 @@ public class SystemNormalizationVisitor {
     }
 
 
-    // Every state, clock & variable should have a name that is unique
-    // across the entire system
+    // Every state, clock & variable should have a name that is unique across the entire system
     // Also, normalize transitions to point to the *real* State objects instead of 'dummy' instances
     // with incorrect Invariant information
     // If you just want a normalized system (without the APs), set them to null
+    //TODO: normalize syncs? there are a lot of unused tau channels
     public static SystemContainer normalize(SystemContainer container) {
         SystemDecl system = container.system;
         Set<StateAP> stateAPs = container.stateAPs;
@@ -141,8 +142,8 @@ public class SystemNormalizationVisitor {
             Set<Clock> newClocks = ta.getClocks().stream().map(c -> new Clock(localClockMap.get(ta).get(c.getName()).getId()))
                     .collect(Collectors.toSet());
 
-            Set<Variable> newVariables = ta.getVariables().stream().map(v -> new Variable(localVariableMap.get(ta).get(v.getName()).getId()))
-                    .collect(Collectors.toSet());
+            Set<Variable> newVariables = ta.getVariables().stream().map(v ->
+                    new Variable(localVariableMap.get(ta).get(v.getName()).getId())).collect(Collectors.toSet());
 
             State newInitialState = mapStringState.get(ta).get(ta.getInitialState().getStringId());
 
