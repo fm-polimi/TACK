@@ -167,13 +167,13 @@ public class SystemNormalizationVisitor {
             variableAssignementAPs = variableAssignementAPs.stream().map(v -> {
                 if (v.getAutomaton().equals("")) {
                     //Global Var
-                    Variable var = new Variable(finalGlobalVariableMap.get(v.getName()).getId());
+                    Variable var = new Variable(finalGlobalVariableMap.get(v.getVariable().getName()).getId());
                     return new VariableAssignementAP("", v.getEncodingSymbol(), var, v.getValue());
                 } else {
                     //Local Var
                     String taName = v.getAutomaton();
                     TA ta = system.getTimedAutomata().stream().filter(t -> t.getIdentifier().equals(taName)).collect(Collectors.toList()).get(0);
-                    Variable var = new Variable(localVariableMap.get(ta).get(v.getName()).getId());
+                    Variable var = new Variable(localVariableMap.get(ta).get(v.getVariable().getName()).getId());
                     return new VariableAssignementAP(taName, v.getEncodingSymbol(), var, v.getValue());
                 }
             }).collect(Collectors.toSet());

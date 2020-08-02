@@ -25,26 +25,28 @@ import java.util.stream.Collectors;
 
 public class TANetwork2Ae2sbvzot {
 
-    private SystemDecl system;
-    private Set<StateAP> propositionsOfInterest;
-    private Set<VariableAssignementAP> atomicpropositionsVariable;
-    private int vecSize;
-    private String vectorType;
+    private final SystemDecl system;
+    private final Set<StateAP> propositionsOfInterest;
+    private final Set<VariableAssignementAP> atomicpropositionsVariable;
+    private final int vecSize;
+    private final String vectorType;
 
-    private Map<String, Integer> mapStateId;
-    private Map<Map.Entry<TA, Transition>, Integer> mapTransitionId;
-    private Map<Map.Entry<TA, Integer>, Transition> mapIdTransition;
+    private final Map<String, Integer> mapStateId;
+    private final Map<Map.Entry<TA, Transition>, Integer> mapTransitionId;
+    private final Map<Map.Entry<TA, Integer>, Transition> mapIdTransition;
 
     //Keep track of max bound for each clock
     private Map<String, Integer> clockBounds;
-    private Set<ClockDecl> allClocks;
-    private Set<VariableDecl> allVariables;
+    private final Set<ClockDecl> allClocks;
+    private final Set<VariableDecl> allVariables;
     //used to see if a constraint refers to a unbounded or bounded var
-    private Map<String, VariableDecl> variableMap;
+    private final Map<String, VariableDecl> variableMap;
 
+    private StringBuilder declarations = new StringBuilder();
+    private StringBuilder initalizations = new StringBuilder();
+    private StringBuilder constraints = new StringBuilder();
+    private StringBuilder loopConstraints = new StringBuilder();
 
-    // Plan:
-    // First make MVP that handles only clocks, then expand to variables, sync
 
     public TANetwork2Ae2sbvzot (SystemDecl systemDecl, Set<StateAP> propositionsOfInterest,
                                 Set<VariableAssignementAP> atomicpropositionsVariable,
@@ -68,18 +70,14 @@ public class TANetwork2Ae2sbvzot {
         this.allVariables = new HashSet<>();
         this.variableMap = new HashMap<>();
 
-        for (ClockDecl c: this.system.getClockDeclarations()) {
-            allClocks.add(c);
-        }
+        allClocks.addAll(this.system.getClockDeclarations());
         for (VariableDecl v: this.system.getVariableDeclaration()) {
             allVariables.add(v);
             variableMap.put(v.getId(),v);
         }
         ClockBoundVisitor boundVisitor = new ClockBoundVisitor();
         for (TA ta : this.system.getTimedAutomata()) {
-            for (ClockDecl c : ta.getClockDeclarations()) {
-                allClocks.add(c);
-            }
+            allClocks.addAll(ta.getClockDeclarations());
             for (VariableDecl v: ta.getDeclarations()) {
                 allVariables.add(v);
                 variableMap.put(v.getId(),v);
@@ -105,48 +103,33 @@ public class TANetwork2Ae2sbvzot {
         }
     }
 
-    public String convert () {
-
-        return declarations();
-    }
-
     // We will often want to assert an expression at every time instance. For states and transitions, the BitVector
     // representation allows us to do this immediately. However since Clocks and Variables are represented as functions,
     // we will use this functional interface to build an expression once, then create a copy for each time instance.
-    // This is more reliable than using smt-lib's quantifiers.
     @FunctionalInterface
     private interface TimedExpression {
         String generate(int i);
     }
 
-    private String assertExp(String exp) {
-        return "(assert " + exp + ")\n";
+    public String convert () {
+        // For organization, and to ensure that fns are defined before use
+        declarations = new StringBuilder();
+        initalizations = new StringBuilder();
+        constraints = new StringBuilder();
+        loopConstraints = new StringBuilder();
+
+        helperFns();
+        APDefinitions();
+        clockInit();
+        variableInit();
+        TAs();
+        loopLogic();
+
+        return declarations.toString() + initalizations + constraints + loopConstraints;
     }
 
-    private TimedExpression assertExp(TimedExpression exp) {
-        return (i) -> "(assert " + exp.generate(i) + ")\n";
-    }
-
-    // Function to convert timed expressions to strings
-    private String evalTimedExpression(TimedExpression exp, int begin, int end) {
-        StringBuilder result = new StringBuilder();
-        for (int i = begin; i < end; i++) {
-            result.append(exp.generate(i));
-        }
-        return result.toString();
-    }
-
-    // Simple helper fn, useful for relations <, >, <=, etc.
-    private TimedExpression combine2TimedExpressions(String op, TimedExpression exp1, TimedExpression exp2) {
-        return (i) -> "(" + op + " " + exp1.generate(i) + " " + exp2.generate(i) + ")";
-    }
-
-    String declarations () {
-        // Just for organization, don't worry too much if you aren't sure where something belongs
-        StringBuilder declarations = new StringBuilder();
-        StringBuilder initalizations = new StringBuilder();
-        StringBuilder constraints = new StringBuilder();
-        StringBuilder loopConstraints = new StringBuilder();
+    private void helperFns () {
+        // Some declarations are omitted because they are generated by ZOT
 
         declarations.append("\n; System Declarations\n;;;;;;;;;;;;;;;;;;;;;\n");
         initalizations.append("\n; System Initializations\n;;;;;;;;;;;;;;;;;;;;;;;;\n");
@@ -193,24 +176,14 @@ public class TANetwork2Ae2sbvzot {
 //                "    ((_ extract 0 0) (bvlshr x index)))\n");
 //        declarations.append("(define-fun loopConF ((x "+vectorType+")) Bool\n" +
 //                "    (= (getbit x i_loop) ((_ extract "+(vecSize -1) + " " + (vecSize -1) + ") x)))\n");
+    }
 
-        //At least 1 TA must transition
-        constraints.append("(assert (eqzeros (bvand");
-        for (TA ta: system.getTimedAutomata()) {
-            constraints.append(" trans_" + ta.getIdentifier() + "_" + mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta,null)));
-        }
-        constraints.append(")))\n");
+    private void APDefinitions () {
 
-        //APs
         constraints.append("\n; APs\n");
         for (StateAP stateAP: this.propositionsOfInterest) {
-            String taName = stateAP.getAutomata();
             String stateName = stateAP.getState();
             int apId = stateAP.getEncodingSymbol();
-            TA ta = system.getTimedAutomata().stream().filter(t -> t.getIdentifier().equals(taName)).collect(Collectors.toList()).get(0);
-            if (ta == null) {
-                throw new IllegalArgumentException("Non-existant TA in model Property: "+taName);
-            }
             // The zot code declares this with declare-fun, so for compatibility we can't use define-fun
             // declarations.append("(declare-fun h_" + apId + " () "+vectorType+")\n");
             constraints.append(assertExp("(= h_" + apId + " " + stateName + ")"));
@@ -226,12 +199,18 @@ public class TANetwork2Ae2sbvzot {
             if (vd instanceof BoundedVariableDecl) {
                 String assignment = boundedVariableAssign((BoundedVariableDecl) vd, value);
                 constraints.append(assertExp("(= h_"+apId+" "+assignment+")"));
-                constraints.append(assertExp("(= p_"+apId+" "+
-                        "(bvor (bvand one h_" + apId + ") (bvshl h_" + apId + " one)))"));
             } else {
                 // TODO: unbounded constraints
+                TimedExpression apBit = (i) -> "(= ((_ extract " + i + " " + i + ") h_" + apId + ") #b1)";
+                constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=", apBit,
+                        (i) -> "(= (" + varName + " " + i + ") " + value + ")")), 0, vecSize));
             }
+            constraints.append(assertExp("(= p_"+apId+" "+
+                    "(bvor (bvand one h_" + apId + ") (bvshl h_" + apId + " one)))"));
         }
+    }
+
+    private void clockInit () {
 
         // All Clocks - Declaration
         declarations.append("\n; Clock Declarations\n");
@@ -251,22 +230,29 @@ public class TANetwork2Ae2sbvzot {
             for (TA ta: system.getTimedAutomata()) {
                 assigningTransitions.addAll(getClockAssigningTransitionIds(ta, cId));
             }
-            //just in case there are 0 matches, add 'false'
+
+            //just in case there are 0 matches, add 'zeros'
             TimedExpression noAssignment = (i) -> "(= ((_ extract " + i + " " + i + ") (bvnot (bvor zeros" +
-                    assigningTransitions.stream().map(s -> " " + s)
-                            .collect(Collectors.joining()) + "))) #b1)";
+                    assigningTransitions.stream()
+                            .map(s -> " " + s)
+                            .collect(Collectors.joining()) +
+                    "))) #b1)";
             constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions(
                     "=>",
                     noAssignment,
                     // If no assignment, c[i+1] = c[i]+delta[i]
-                    (i) -> "(= (" + cId + " " + (i+1) + ") (+ (" + cId + " " + i + ") (delta " + i + ")))")),0, vecSize-1));
+                    (i) -> "(= (" + cId + " " + (i+1) + ") (+ (" + cId + " " + i + ") (delta " + i + ")))")),
+                    0,
+                    vecSize-1));
         }
 
         // Simple progression constraints for special clock 'delta'
         for (int i = 0; i < vecSize; i++) {
             constraints.append("(assert (< 0 (delta " + i + ")))\n");
         }
+    }
 
+    private void variableInit () {
 
         //Unbounded Variables - Declaration
         declarations.append("\n; Unbounded Variable Declarations\n");
@@ -326,158 +312,249 @@ public class TANetwork2Ae2sbvzot {
                         (i) -> "(= (" + vId + " " + (i + 1) + ") (" + vId + " " + i + "))")), 0, vecSize - 1));
             }
         }
+    }
 
+    private void TAs () {
+
+        //At least 1 TA must transition
+        constraints.append("(assert (eqzeros (bvand");
+        for (TA ta: system.getTimedAutomata()) {
+            constraints.append(" trans_" + ta.getIdentifier() + "_" + mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta,null)));
+        }
+        constraints.append(")))\n");
 
         for (TA ta : system.getTimedAutomata()) {
-
-            // Bit representation of states
-            // Copied enumeration code from TANetwork2CLTLocRC, placed in class init
-            int stateBits = intToNumBits(ta.getStates().size());
-            for (int i = 0; i < stateBits; i++) {
-                declarations.append("(declare-fun s_" + ta.getIdentifier() + "_" + i + " () " + vectorType + ")\n");
-                loopConstraints.append(assertExp("(=> loopex (loopConF s_" + ta.getIdentifier() + "_" + i + "))"));
-            }
-
-            //Shorthand for accessing individual states:
-            for (State s: ta.getStates()) {
-                declarations.append("(define-fun " + s.getStringId() + " () " + vectorType + "\n" +
-                        "    " + genStateBits(ta, s) + ")\n");
-            }
-
-            // if number of states != power of 2, there will be illegal combinations of the s_bits
-            constraints.append(assertExp("(eqones (bvor" + ta.getStates().stream().map(s -> " " + s.getStringId())
-                    .collect(Collectors.joining()) + "))"));
-
-            initalizations.append("; TA must start in initial state\n");
-            initalizations.append("(assert (eqones (bvimpl (_ bv1 " + vecSize + ") " + ta.getInitialState().getStringId() + ")))\n");
-
-            // Bit representation of transitions
-            int transBits = intToNumBits(ta.getTransitions().size()+1); // +1 is for no transition taken
-            for (int i=0; i < transBits; i++) {
-                declarations.append("(declare-fun t_" + ta.getIdentifier() + "_" + i + " () " + vectorType + ")\n");
-                loopConstraints.append(assertExp("(=> loopex (loopConF t_" + ta.getIdentifier() + "_" + i + "))"));
-            }
-            // Shorthand for accessing individual transitions:
-            Set<Transition> transitionSet = new HashSet<>(ta.getTransitions());
-            transitionSet.add(null);
-            for (Transition t: transitionSet) {
-                int transId = mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta, t));
-                declarations.append("(define-fun trans_" + ta.getIdentifier() + "_" + transId + " () " + vectorType + "\n" +
-                        "    " + genTransitionBits(ta, t) + ")\n");
-            }
-            // if the number of transitions isn't a power of 2 there will be illegal combinations of the t_bits
-            if (transitionSet.size() > 0) {
-                constraints.append("(assert (eqones (bvor");
-                for (Transition t : transitionSet) {
-                    int transId = mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta, t));
-                    constraints.append(" trans_" + ta.getIdentifier() + "_" + transId);
-                }
-                constraints.append(")))\n");
-            }
-
-            // following the convention used in past versions, if a transition t from state a to state b is true at
-            // time position 0, that means that the TA is in state a at time 0 and in state b at time 1
-            for (Transition t : ta.getTransitions()) {
-               String transition = genTransition(ta, t);
-               String sourceState = t.getSource().getStringId();
-               String destState = t.getDestination().getStringId();
-               //assert that a transition implies the TA is currently in the source state
-                constraints.append("(assert (eqones (bvimpl " + transition + " " + sourceState + ")))\n");
-                //assert that a transition implies the TA will be in the dest state next
-                constraints.append("(assert (eqones (bvimpl (getprev " + transition + ") (getnext " + destState + "))))\n");
-            }
-            // null transition constraint
-            constraints.append("(assert (eqones (bvimpl " + genTransition(ta, null) + " (bvand");
-            for (int i = 0; i < stateBits; i++) {
-                String sBit = "s_" + ta.getIdentifier() + "_" + i;
-                constraints.append(" (bviff (getnext " + sBit + ") (getprev " + sBit + "))");
-            }
-            constraints.append("))))\n");
-
-            //Each transition implies that its guard is true at the moment of transition
-            constraints.append("\n; Transition Guards\n");
-            for (Transition t : ta.getTransitions()) {
-                TimedExpression transBit = (i) -> "(= ((_ extract " + i + " " + i + ") " + genTransition(ta,t) + ") #b1)";
-                Guard g = t.getGuard();
-                Set<ClockConstraintAtom> clockConstraints = g.getClockConstraints();
-                for (ClockConstraintAtom atom: clockConstraints){
-                    constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>",
-                            transBit, clockGuardParser(atom))), 0, vecSize-1));
-                }
-                Set<VariableConstraintAtom> variableConstraints = g.getConditions();
-                for (VariableConstraintAtom atom: variableConstraints) {
-                    VariableDecl v = variableMap.get(atom.getVariable().getName());
-                    if (v instanceof BoundedVariableDecl) {
-                        BoundedVariableDecl bv = (BoundedVariableDecl) v;
-                        constraints.append(assertExp("(eqones (bvimpl "+genTransition(ta,t)+" "+
-                                boundedVariableGuardParser(atom)+"))"));
-                    } else {
-                        constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>",
-                                transBit, variableGuardParser(atom))),0,vecSize-1));
-                    }
-                }
-            }
-
-            //If a transition is fired, then its assignments must be enforced
-            constraints.append("\n; Transition Assignments\n");
-            for (Transition t: ta.getTransitions()) {
-                TimedExpression transBit = (i) -> "(= ((_ extract " + i + " " + i + ") " + genTransition(ta,t) + ") #b1)";
-                for (ClockAssignement ca: t.getAssignement().getClockassigments()) {
-                    String clockId = ca.getClock().getName();
-                    int value = ca.getValue().evaluate();
-                    constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>", transBit,
-                            (i) -> "(= (" + clockId + " " + (i+1) + ") " + value + ")")),0, vecSize-1));
-                }
-                for (VariableAssignement va: t.getAssignement().getVariableassigments()) {
-                    //TODO: currently we assume that the assignment is to an int/Value, not a more general expression
-                    String varId = va.getVariable().getName();
-                    int value = va.getValue().evaluate();
-                    VariableDecl v = variableMap.get(varId);
-                    if (v instanceof BoundedVariableDecl) {
-                        BoundedVariableDecl bv = (BoundedVariableDecl) v;
-                        constraints.append(assertExp("(eqones (bvimpl (getprev " + genTransition(ta,t) + ") (getnext " +
-                                boundedVariableAssign(bv,value) + ")))"));
-                    } else {
-                        constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>", transBit,
-                                (i) -> "(= (" + varId + " " + (i + 1) + ") " + value + ")")), 0, vecSize - 1));
-                    }
-                }
-            }
-
-            constraints.append("; Invariant constraints\n");
-            for (Transition t: ta.getTransitions()) {
-                TimedExpression transBit = (i) -> "(= ((_ extract " + i + " " + i + ") " + genTransition(ta,t) + ") #b1)";
-                Invariant sourceInv = t.getSource().getInvariant();
-                Invariant destInv = t.getDestination().getInvariant();
-                ClockConstraintAtom sourceConstraint;
-                ClockConstraintAtom destConstraint;
-                if (sourceInv instanceof EmptyInvariant && destInv instanceof EmptyInvariant) continue;
-                if (sourceInv instanceof EmptyInvariant) {
-                    sourceConstraint = null;
-                } else {
-                    sourceConstraint = invariantTransformer((ExpInvariant) sourceInv);
-                }
-                if (destInv instanceof EmptyInvariant) {
-                    destConstraint = null;
-                } else {
-                    destConstraint = invariantTransformer((ExpInvariant) destInv);
-                }
-                constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>",
-                        transBit, combine2TimedExpressions("or",
-                                combine2TimedExpressions("and", clockInvariantParser(sourceConstraint), clockWeakInvariantParser(destConstraint)),
-                                combine2TimedExpressions("and", clockWeakInvariantParser(sourceConstraint), clockInvariantParser(destConstraint))))),
-                        0, vecSize-1));
-            }
-            for (State s: ta.getStates()) {
-                Invariant inv = s.getInvariant();
-                if (inv instanceof EmptyInvariant) continue;
-                TimedExpression stateBit = (i) -> "(= ((_ extract " + i + " " + i + ") " + s.getStringId() + ") #b1)";
-                ClockConstraintAtom constraint = invariantTransformer((ExpInvariant) inv);
-                constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>", stateBit,
-                                clockWeakInvariantParser(constraint))),0,vecSize-1));
-            }
-
+            taBitVectors(ta);
+            taSync(ta);
+            taGuards(ta);
+            taAssignments(ta);
+            taInvariants(ta);
         }
+    }
+
+    private void taBitVectors(TA ta) {
+        // Bit representation of states
+        int stateBits = intToNumBits(ta.getStates().size());
+        for (int i = 0; i < stateBits; i++) {
+            declarations.append("(declare-fun s_" + ta.getIdentifier() + "_" + i + " () " + vectorType + ")\n");
+            loopConstraints.append(assertExp("(=> loopex (loopConF s_" + ta.getIdentifier() + "_" + i + "))"));
+        }
+
+        //Shorthand for accessing individual states:
+        for (State s: ta.getStates()) {
+            declarations.append("(define-fun " + s.getStringId() + " () " + vectorType + "\n" +
+                    "    " + genStateBits(ta, s) + ")\n");
+        }
+
+        // if number of states != power of 2, there will be illegal combinations of the s_bits
+        constraints.append(assertExp("(eqones (bvor" + ta.getStates().stream().map(s -> " " + s.getStringId())
+                .collect(Collectors.joining()) + "))"));
+
+        initalizations.append("; TA must start in initial state\n");
+        initalizations.append("(assert (eqones (bvimpl (_ bv1 " + vecSize + ") " + ta.getInitialState().getStringId() + ")))\n");
+
+        // Bit representation of transitions
+        int transBits = intToNumBits(ta.getTransitions().size()+1); // +1 is for no transition taken
+        for (int i=0; i < transBits; i++) {
+            declarations.append("(declare-fun t_" + ta.getIdentifier() + "_" + i + " () " + vectorType + ")\n");
+            loopConstraints.append(assertExp("(=> loopex (loopConF t_" + ta.getIdentifier() + "_" + i + "))"));
+        }
+        // Shorthand for accessing individual transitions:
+        Set<Transition> transitionSet = new HashSet<>(ta.getTransitions());
+        transitionSet.add(null);
+        for (Transition t: transitionSet) {
+            int transId = mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta, t));
+            declarations.append("(define-fun trans_" + ta.getIdentifier() + "_" + transId + " () " + vectorType + "\n" +
+                    "    " + genTransitionBits(ta, t) + ")\n");
+        }
+        // if the number of transitions isn't a power of 2 there will be illegal combinations of the t_bits
+        if (transitionSet.size() > 0) {
+            constraints.append("(assert (eqones (bvor");
+            for (Transition t : transitionSet) {
+                int transId = mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta, t));
+                constraints.append(" trans_" + ta.getIdentifier() + "_" + transId);
+            }
+            constraints.append(")))\n");
+        }
+
+        // following the convention used in past versions, if a transition t from state a to state b is true at
+        // time position 0, that means that the TA is in state a at time 0 and in state b at time 1
+        for (Transition t : ta.getTransitions()) {
+            String transition = genTransition(ta, t);
+            String sourceState = t.getSource().getStringId();
+            String destState = t.getDestination().getStringId();
+            //assert that a transition implies the TA is currently in the source state
+            constraints.append("(assert (eqones (bvimpl " + transition + " " + sourceState + ")))\n");
+            //assert that a transition implies the TA will be in the dest state next
+            constraints.append("(assert (eqones (bvimpl (getprev " + transition + ") (getnext " + destState + "))))\n");
+        }
+        // null transition constraint
+        constraints.append("(assert (eqones (bvimpl " + genTransition(ta, null) + " (bvand");
+        for (int i = 0; i < stateBits; i++) {
+            String sBit = "s_" + ta.getIdentifier() + "_" + i;
+            constraints.append(" (bviff (getnext " + sBit + ") (getprev " + sBit + "))");
+        }
+        constraints.append("))))\n");
+    }
+
+    private void taSync(TA ta) {
+        // Sync constraints
+        for (Transition t: ta.getTransitions()) {
+            SyncExpression sync = t.getSync();
+            String syncChannel = sync.getEvent();
+            if (sync.getOperator() == SyncExpression.Operator.TAU) continue;
+
+            Set<Map.Entry<TA,Transition>> channelTransitions = mapTransitionId.keySet().stream()
+                    .filter(e -> e.getValue() != null && e.getValue().getSync() != null)
+                    // exclude transitions from same TA
+                    .filter(e -> e.getValue().getSync().getEvent().equals(syncChannel) && !(e.getKey().equals(ta)))
+                    .collect(Collectors.toSet());
+
+            String sendingTransitions = channelTransitions.stream()
+                    .filter(e -> e.getValue().getSync().getOperator() == SyncExpression.Operator.CHANNEL_SEND)
+                    .map(e -> " "+genTransition(e.getKey(),e.getValue()))
+                    .collect(Collectors.joining());
+
+            String receivingTransitions = channelTransitions.stream()
+                    .filter(e -> e.getValue().getSync().getOperator() == SyncExpression.Operator.CHANNEL_RECEIVED)
+                    .map(e -> " " + genTransition(e.getKey(),e.getValue()))
+                    .collect(Collectors.joining());
+
+            String broadcastSendingTransitions = channelTransitions.stream()
+                    .filter(e -> e.getValue().getSync().getOperator() == SyncExpression.Operator.BROADCAST_SEND)
+                    .map(e -> " "+genTransition(e.getKey(),e.getValue()))
+                    .collect(Collectors.joining());
+
+            String broadcastReceivingTransitions = channelTransitions.stream()
+                    .filter(e -> e.getValue().getSync().getOperator() == SyncExpression.Operator.BROADCAST_RECEIVE)
+                    .map(e -> " " + genTransition(e.getKey(),e.getValue()))
+                    .collect(Collectors.joining());
+
+            if (sync.getOperator() == SyncExpression.Operator.CHANNEL_SEND) {
+                //Only 1 send per-channel at a time
+                if (!(sendingTransitions.equals(""))) {
+                    constraints.append(assertExp("(eqones (bvimpl " + genTransition(ta, t) + " (bvnot (bvor"+
+                            sendingTransitions+"))))"));
+                }
+                constraints.append(assertExp("(eqones (bvimpl "+genTransition(ta,t)+" (bvor zeros"+
+                        receivingTransitions+")))"));
+            } else if (sync.getOperator() == SyncExpression.Operator.CHANNEL_RECEIVED) {
+                if (!(receivingTransitions.equals(""))) {
+                    constraints.append(assertExp("(eqones (bvimpl " + genTransition(ta, t) + " (bvnot (bvor" +
+                            receivingTransitions + "))))"));
+                }
+                constraints.append(assertExp("(eqones (bvimpl " + genTransition(ta, t) + "(bvor zeros" +
+                        sendingTransitions + ")))"));
+            } else if (sync.getOperator() == SyncExpression.Operator.BROADCAST_SEND) {
+                if (!(broadcastSendingTransitions.equals(""))) {
+                    constraints.append(assertExp("(eqones (bvimpl " + genTransition(ta, t) + " (bvnot (bvor" +
+                            broadcastSendingTransitions + "))))"));
+                }
+                constraints.append(assertExp("(eqones (bvimpl " + genTransition(ta, t) + " (bvor zeros" +
+                        broadcastReceivingTransitions + ")))"));
+            } else if (sync.getOperator() == SyncExpression.Operator.BROADCAST_RECEIVE) {
+                constraints.append(assertExp("(eqones (bvimpl " + genTransition(ta, t) + "(bvor zeros" +
+                        broadcastSendingTransitions + ")))"));
+            } else {
+                throw new IllegalArgumentException("Operator "+sync.getOperator()+" not supported.");
+            }
+        }
+    }
+
+    private void taGuards(TA ta) {
+        //Each transition implies that its guard is true at the moment of transition
+        constraints.append("\n; Transition Guards\n");
+        for (Transition t : ta.getTransitions()) {
+            TimedExpression transBit = (i) -> "(= ((_ extract " + i + " " + i + ") " + genTransition(ta,t) + ") #b1)";
+            Guard g = t.getGuard();
+            Set<ClockConstraintAtom> clockConstraints = g.getClockConstraints();
+            for (ClockConstraintAtom atom: clockConstraints){
+                constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>",
+                        transBit, clockGuardParser(atom))), 0, vecSize-1));
+            }
+            Set<VariableConstraintAtom> variableConstraints = g.getConditions();
+            for (VariableConstraintAtom atom: variableConstraints) {
+                VariableDecl v = variableMap.get(atom.getVariable().getName());
+                if (v instanceof BoundedVariableDecl) {
+                    BoundedVariableDecl bv = (BoundedVariableDecl) v;
+                    constraints.append(assertExp("(eqones (bvimpl "+genTransition(ta,t)+" "+
+                            boundedVariableGuardParser(atom)+"))"));
+                } else {
+                    constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>",
+                            transBit, variableGuardParser(atom))),0,vecSize-1));
+                }
+            }
+        }
+    }
+
+    private void taAssignments(TA ta) {
+        //If a transition is fired, then its assignments must be enforced
+        constraints.append("\n; Transition Assignments\n");
+        for (Transition t: ta.getTransitions()) {
+            TimedExpression transBit = (i) -> "(= ((_ extract " + i + " " + i + ") " + genTransition(ta,t) + ") #b1)";
+            for (ClockAssignement ca: t.getAssignement().getClockassigments()) {
+                String clockId = ca.getClock().getName();
+                int value = ca.getValue().evaluate();
+                constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>", transBit,
+                        (i) -> "(= (" + clockId + " " + (i+1) + ") " + value + ")")),0, vecSize-1));
+            }
+            for (VariableAssignement va: t.getAssignement().getVariableassigments()) {
+                //TODO: currently we assume that the assignment is to an int/Value, not a more general expression
+                String varId = va.getVariable().getName();
+                int value = va.getValue().evaluate();
+                VariableDecl v = variableMap.get(varId);
+                if (v instanceof BoundedVariableDecl) {
+                    BoundedVariableDecl bv = (BoundedVariableDecl) v;
+                    constraints.append(assertExp("(eqones (bvimpl (getprev " + genTransition(ta,t) + ") (getnext " +
+                            boundedVariableAssign(bv,value) + ")))"));
+                } else {
+                    constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>", transBit,
+                            (i) -> "(= (" + varId + " " + (i + 1) + ") " + value + ")")), 0, vecSize - 1));
+                }
+            }
+        }
+    }
+
+    private void taInvariants(TA ta) {
+
+
+
+        constraints.append("; Invariant constraints\n");
+        for (Transition t: ta.getTransitions()) {
+            TimedExpression transBit = (i) -> "(= ((_ extract " + i + " " + i + ") " + genTransition(ta,t) + ") #b1)";
+            Invariant sourceInv = t.getSource().getInvariant();
+            Invariant destInv = t.getDestination().getInvariant();
+            ClockConstraintAtom sourceConstraint;
+            ClockConstraintAtom destConstraint;
+            if (sourceInv instanceof EmptyInvariant && destInv instanceof EmptyInvariant) continue;
+            if (sourceInv instanceof EmptyInvariant) {
+                sourceConstraint = null;
+            } else {
+                sourceConstraint = invariantTransformer((ExpInvariant) sourceInv);
+            }
+            if (destInv instanceof EmptyInvariant) {
+                destConstraint = null;
+            } else {
+                destConstraint = invariantTransformer((ExpInvariant) destInv);
+            }
+            constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>",
+                    transBit, combine2TimedExpressions("or",
+                            combine2TimedExpressions("and", clockInvariantParser(sourceConstraint), clockWeakInvariantParser(destConstraint)),
+                            combine2TimedExpressions("and", clockWeakInvariantParser(sourceConstraint), clockInvariantParser(destConstraint))))),
+                    0, vecSize-1));
+        }
+        for (State s: ta.getStates()) {
+            Invariant inv = s.getInvariant();
+            if (inv instanceof EmptyInvariant) continue;
+            TimedExpression stateBit = (i) -> "(= ((_ extract " + i + " " + i + ") " + s.getStringId() + ") #b1)";
+            ClockConstraintAtom constraint = invariantTransformer((ExpInvariant) inv);
+            constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>", stateBit,
+                    clockWeakInvariantParser(constraint))),0,vecSize-1));
+        }
+    }
+
+    private void loopLogic () {
+
         //Variable Loop Constraints
         loopConstraints.append(allVariables.stream().map(v -> v.getId()).map(v -> assertExp("(=> loopex (= (" + v +
                 " " + (vecSize-1) + ") (" + v + " i-loop)))")).collect(Collectors.joining()));
@@ -490,6 +567,9 @@ public class TANetwork2Ae2sbvzot {
             if (!clockBounds.containsKey(clockId)) {
                 clockBounds.put(clockId, 0);
             }
+        }
+        for (ClockDecl clock: allClocks) {
+            String clockId = clock.getId();
             int cBound = clockBounds.get(clockId);
             // If loopex, then c[clockId] must also be the floor of the clock value at i-loop,
             // unless the clock value is greater than the maximum value at both locations
@@ -523,8 +603,11 @@ public class TANetwork2Ae2sbvzot {
                     assigningTransitions.stream().map(t -> " " + t).collect(Collectors.joining()) + "))))))"));
         }
 
-
-        return declarations.toString() + initalizations.toString() + constraints.toString() + loopConstraints.toString();
+        //TODO: is strong transition liveness what we are implementing?
+        for (TA ta: system.getTimedAutomata()) {
+            loopConstraints.append(assertExp("(not (= inloop (bvand inloop trans_" + ta.getIdentifier() + "_" +
+                    mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta,null)) + ")))"));
+        }
     }
 
     private Set<String> getClockAssigningTransitionIds(TA ta, String clockId) {
@@ -647,7 +730,7 @@ public class TANetwork2Ae2sbvzot {
     }
 
     private ClockConstraintAtom invariantTransformer(ExpInvariant inv) {
-        //TODO: maybe do everyone a favor and fix this dumb Identifier/Value/Expression confusion
+        //TODO: maybe do everyone a favor and fix this Identifier/Value/Expression confusion
         return new ClockConstraintAtom(new Clock(inv.getId().getId()), ClockConstraintAtom.ClockConstraintAtomOperator.parse(inv.getOperator()),
                 inv.getExp().evaluate());
 
@@ -715,6 +798,29 @@ public class TANetwork2Ae2sbvzot {
         return null;
     }
 
+    private String assertExp(String exp) {
+        return "(assert " + exp + ")\n";
+    }
+
+    private TimedExpression assertExp(TimedExpression exp) {
+        return (i) -> "(assert " + exp.generate(i) + ")\n";
+    }
+
+    // Function to convert timed expressions to strings
+    private String evalTimedExpression(TimedExpression exp, int begin, int end) {
+        StringBuilder result = new StringBuilder();
+        for (int i = begin; i < end; i++) {
+            result.append(exp.generate(i));
+        }
+        return result.toString();
+    }
+
+    // Simple helper fn, useful for relations <, >, <=, etc.
+    private TimedExpression combine2TimedExpressions(String op, TimedExpression exp1, TimedExpression exp2) {
+        return (i) -> "(" + op + " " + exp1.generate(i) + " " + exp2.generate(i) + ")";
+    }
+
+
     int intToNumBits(int i) {
         if (i == 0) return 0;
         if (i < 0) i = -1*i;
@@ -735,3 +841,5 @@ public class TANetwork2Ae2sbvzot {
         return Math.max(2,intToNumBits(Math.max(max,min)+1)+1);
     }
 }
+
+
