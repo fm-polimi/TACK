@@ -105,7 +105,7 @@ public class Tack {
 		}
 
 		if (converter == null) {
-			converter = new TANetwork2CLTLocRC();
+			//converter = new TANetwork2CLTLocRC();
 		}
 
 		out.println("Semantic loaded");

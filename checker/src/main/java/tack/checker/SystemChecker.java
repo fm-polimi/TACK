@@ -35,6 +35,7 @@ import formulae.mitli.converters.MITLI2CLTLoc;
 import formulae.mitli.visitors.GetPropositionalAtomsVisitor;
 import formulae.mitli.visitors.GetRelationalAtomsVisitor;
 import solvers.CLTLocsolver;
+import solvers.HybridCLTLocsolver;
 import ta.StateAP;
 import ta.SystemDecl;
 import ta.TA;
@@ -90,8 +91,8 @@ public class SystemChecker {
 
 	/**
 	 * 
-	 * @param ta
-	 *            the timed automaton to be verified
+	 * @param system
+	 *            the system of timed automata to be verified
 	 * @param mitliformula
 	 *            the MITLI to be considered
 	 * @param bound
@@ -189,8 +190,22 @@ public class SystemChecker {
 		File binding = new File("binding.txt");
 		FileUtils.writeStringToFile(binding, vocabularyBuilder.toString());
 
-		out.println("************************************************");
-		out.println(vocabularyBuilder.toString());
+		if (converter == null) {
+			out.println("Converting TA to SMT");
+			out.println("************************************************");
+			final TANetwork2Ae2sbvzot smtConv= new TANetwork2Ae2sbvzot(system, atomicpropositions, atomicpropositionsVariable, bound);
+			String smtTA = smtConv.convert();
+			out.println("TA converted");
+
+			HybridCLTLocsolver hybridSolver = new HybridCLTLocsolver(smtTA, new CLTLocYesterday(formula), bound,
+					new PrintStream( ByteStreams.nullOutputStream()));
+			boolean sat = hybridSolver.solve();
+
+			//if (sat == true) {
+			//	this.generateTACKHistory("./output.hist.txt", "counterexample.txt", converter, system);
+			//}
+			return sat ? false : true;
+		}
 		out.println("************************************************");
 		out.println("Converting the TA in CLTLoc");
 
@@ -203,10 +218,6 @@ public class SystemChecker {
 		taFormula = converter.convert(system, atomicpropositions, atomicpropositionsVariable);
 
 		out.println("TA converted in CLTLoc");
-		out.println("EXPERIMENTAL: Converting TA to SMT");
-		out.println("************************************************");
-		out.println(smtConv.convert());
-
 		timer.stop();
 		this.ta2clclocTime = timer.elapsed(TimeUnit.MILLISECONDS);
 
@@ -240,7 +251,7 @@ public class SystemChecker {
 		out.println("Conjunction of the formulae created");
 
 		out.println("Running ZOT... This might take a while");
-		
+
 		CLTLocsolver cltlocSolver = new CLTLocsolver(conjunctionFormula,
 				new PrintStream(ByteStreams.nullOutputStream()), bound);
 		boolean sat = cltlocSolver.solve();

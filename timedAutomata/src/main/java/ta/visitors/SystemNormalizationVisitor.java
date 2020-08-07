@@ -4,7 +4,6 @@ import ta.*;
 import ta.declarations.BoundedVariableDecl;
 import ta.declarations.ClockDecl;
 import ta.declarations.VariableDecl;
-import ta.expressions.EmptyExpression;
 import ta.expressions.Identifier;
 import ta.state.ExpInvariant;
 import ta.state.Invariant;
@@ -14,11 +13,8 @@ import ta.transition.Guard;
 import ta.transition.Transition;
 import ta.transition.assignments.ClockAssignement;
 import ta.transition.assignments.VariableAssignement;
-import ta.transition.guard.BinaryClockConstraint;
-import ta.transition.guard.BinaryVariableConstraint;
 import ta.transition.guard.ClockConstraintAtom;
 import ta.transition.guard.VariableConstraintAtom;
-import ta.transition.sync.SyncExpression;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -42,7 +38,6 @@ public class SystemNormalizationVisitor {
     // Also, normalize transitions to point to the *real* State objects instead of 'dummy' instances
     // with incorrect Invariant information
     // If you just want a normalized system (without the APs), set them to null
-    //TODO: normalize syncs? there are a lot of unused tau channels
     public static SystemContainer normalize(SystemContainer container) {
         SystemDecl system = container.system;
         Set<StateAP> stateAPs = container.stateAPs;
@@ -52,9 +47,6 @@ public class SystemNormalizationVisitor {
         // Sets of Global & local clocks, modified to have a unique naming scheme
         // 'c_' is prepended to the names of global clocks
         // 'cl_[TA-id]_' is prepended to the names of local clocks
-        // although the parser guarantees that all variable names are unique,
-        // the TA template feature means that TAs derived from the same template will have
-        // local clocks with the same name
         Map<String,ClockDecl> globalClockMap = new HashMap<>();
         Map<TA,Map<String,ClockDecl>> localClockMap = new HashMap<>();
         Map<String, VariableDecl> globalVariableMap = new HashMap<>();
@@ -201,7 +193,6 @@ public class SystemNormalizationVisitor {
         }
     }
 
-    //TODO: need to recurse on VariableAssignment value, it is an expression that can contain other Variable names
     private static Assign normalizeAssign(Assign assign, Map<String, ClockDecl> clockMap, Map<String, VariableDecl> variableMap) {
         ExpressionVariableRenamingVisitor variableRenamingVisitor = new ExpressionVariableRenamingVisitor(variableMap);
         Set<ClockAssignement> ca = assign.getClockassigments().stream().map(c ->

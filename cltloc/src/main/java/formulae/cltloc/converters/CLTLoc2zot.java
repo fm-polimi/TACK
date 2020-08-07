@@ -24,6 +24,7 @@ public class CLTLoc2zot implements Function<CLTLocFormula, String> {
 
 	private final int bound;
 	private final int maxConstant;
+	private boolean dryrun = false;
 
 	private final ZotPlugin plugin;
 
@@ -39,6 +40,10 @@ public class CLTLoc2zot implements Function<CLTLocFormula, String> {
 		this.bound = bound;
 		this.maxConstant = maxConstant;
 		this.plugin = plugin;
+	}
+
+	public void setDryRun(boolean dryrun) {
+		this.dryrun = dryrun;
 	}
 
 	public String apply(CLTLocFormula formula) {
@@ -82,6 +87,10 @@ public class CLTLoc2zot implements Function<CLTLocFormula, String> {
 				+ ":smt-lib :smt2 \n" + ":over-clocks " + maxConstant + "\n"
 				+ ":logic :QF_UFLRA" + "\n" 
 				+ ":gen-symbolic-val nil\n");
+
+		if (dryrun) {
+			builder.append(":dry-run t\n");
+		}
 
 		if (plugin.equals(ZotPlugin.AE2SBVZOT) || plugin.equals(ZotPlugin.AE2ZOT)) {
 			builder.append(":parametric-regions t\n");
