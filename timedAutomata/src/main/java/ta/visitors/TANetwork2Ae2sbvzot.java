@@ -5,6 +5,10 @@ import ta.*;
 import ta.declarations.BoundedVariableDecl;
 import ta.declarations.ClockDecl;
 import ta.declarations.VariableDecl;
+import ta.expressions.Expression;
+import ta.expressions.Identifier;
+import ta.expressions.Value;
+import ta.expressions.binary.BinaryArithmeticExpression;
 import ta.state.EmptyInvariant;
 import ta.transition.Assign;
 import ta.state.ExpInvariant;
@@ -20,6 +24,7 @@ import ta.transition.guard.VariableConstraintAtom;
 import ta.transition.sync.SyncExpression;
 
 
+import java.sql.Time;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -450,8 +455,41 @@ public class TANetwork2Ae2sbvzot {
                     constraints.append(assertExp("(eqones (bvimpl " + genTransition(ta, t) + " (bvnot (bvor" +
                             broadcastSendingTransitions + "))))"));
                 }
-                constraints.append(assertExp("(eqones (bvimpl " + genTransition(ta, t) + " (bvor zeros" +
-                        broadcastReceivingTransitions + ")))"));
+                TimedExpression sender = (i) -> "(= ((_ extract "+i+" "+i+") "+genTransition(ta, t)+") #b1)";
+                for (TA ta2: system.getTimedAutomata()) {
+                    if (ta2 == ta) continue;
+                    Set<Transition> bcastReceiving = mapTransitionId.keySet().stream()
+                            .filter(e -> e.getValue() != null && e.getValue().getSync() != null)
+                            .filter(e -> e.getValue().getSync().getEvent().equals(syncChannel))
+                            .filter(e -> e.getValue().getSync().getOperator() == SyncExpression.Operator.BROADCAST_RECEIVE)
+                            .filter(e -> e.getKey().equals(ta2))
+                            .map(e -> e.getValue())
+                            .collect(Collectors.toSet());
+                    if (bcastReceiving.isEmpty()) continue;
+                    String receiving = bcastReceiving.stream()
+                            .map(tr -> " " + genTransition(ta2,tr))
+                            .collect(Collectors.joining());
+                    TimedExpression allReceiving = (i) -> "(= ((_ extract "+i+" "+i+") (bvor "+receiving+")) #b1)";
+                    // transition is forced iff clock and variable constraints hold
+                    TimedExpression conditions = (i) -> "";
+                    for (Transition tr: bcastReceiving) {
+                        TimedExpression stateBit = (i) -> "(= ((_ extract "+i+" "+i+") "+tr.getSource().getStringId()+") #b1)";
+                        TimedExpression clockGuard = tr.getGuard().getClockConstraints().stream()
+                                .map(this::clockGuardParser)
+                                .reduce((i)->"",(t1,t2) -> (i) -> t1.generate(i)+" "+t2.generate(i));
+                        TimedExpression variableGuard = tr.getGuard().getConditions().stream()
+                                .map(this::variableGuardParser)
+                                .reduce((i)->"",(t1,t2)-> (i) -> t1.generate(i)+" "+t2.generate(i));
+                        TimedExpression finalConditions = conditions;
+                        conditions = (i)-> finalConditions.generate(i)+" (and "+stateBit.generate(i)+" "+clockGuard.generate(i)+
+                                " "+variableGuard.generate(i)+")";
+                    }
+                    TimedExpression finalConditions1 = conditions;
+                    constraints.append(evalTimedExpression(assertExp((i) -> "(=> (and "+sender.generate(i)+
+                            " "+"(or"+ finalConditions1.generate(i)+")) "+allReceiving.generate(i)+")"),0,vecSize-1));
+                }
+                //constraints.append(assertExp("(eqones (bvimpl " + genTransition(ta, t) + " (bvor zeros" +
+                //        broadcastReceivingTransitions + ")))"));
             } else if (sync.getOperator() == SyncExpression.Operator.BROADCAST_RECEIVE) {
                 constraints.append(assertExp("(eqones (bvimpl " + genTransition(ta, t) + "(bvor zeros" +
                         broadcastSendingTransitions + ")))"));
@@ -499,19 +537,50 @@ public class TANetwork2Ae2sbvzot {
                         (i) -> "(= (" + clockId + " " + (i+1) + ") " + value + ")")),0, vecSize-1));
             }
             for (VariableAssignement va: t.getAssignement().getVariableassigments()) {
-                //TODO: currently we assume that the assignment is to an int/Value, not a more general expression
                 String varId = va.getVariable().getName();
                 int value = va.getValue().evaluate();
                 VariableDecl v = variableMap.get(varId);
                 if (v instanceof BoundedVariableDecl) {
                     BoundedVariableDecl bv = (BoundedVariableDecl) v;
-                    constraints.append(assertExp("(eqones (bvimpl (getprev " + genTransition(ta,t) + ") (getnext " +
-                            boundedVariableAssign(bv,value) + ")))"));
+                    if (va.getValue() instanceof Value) {
+                        constraints.append(assertExp("(eqones (bvimpl (getprev " + genTransition(ta,t) + ") (getnext " +
+                                boundedVariableAssign(bv,value) + ")))"));
+                    } else {
+                        TimedExpression assign = bvAssign(va.getValue());
+                        constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>", transBit,
+                                (i) -> "(= (bv2int (" + varId + " " + (i+1) + ")) " + assign.generate(i) + ")")),0,vecSize-1));
+                    }
                 } else {
+                    TimedExpression assign = bvAssign(va.getValue());
                     constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>", transBit,
-                            (i) -> "(= (" + varId + " " + (i + 1) + ") " + value + ")")), 0, vecSize - 1));
+                            (i) -> "(= (" + varId + " " + (i+1) + ") " + assign.generate(i) + ")")),0,vecSize-1));
+                    //constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>", transBit,
+                    //        (i) -> "(= (" + varId + " " + (i + 1) + ") " + value + ")")), 0, vecSize - 1));
                 }
             }
+        }
+    }
+
+    private TimedExpression bvAssign(Expression e) {
+        if (e instanceof Value) {
+            Value v = (Value) e;
+            return (i) -> "" + v.evaluate();
+        } else if (e instanceof Identifier) {
+            Identifier iden = (Identifier) e;
+            String varId = iden.getId();
+            VariableDecl v = variableMap.get(varId);
+            if (v instanceof BoundedVariableDecl) {
+                return (i) -> "(bv2int (" + varId + " " + i + "))";
+            } else {
+                return (i) -> "(" + varId + " " + i + ")";
+            }
+        } else if (e instanceof BinaryArithmeticExpression) {
+            BinaryArithmeticExpression b = (BinaryArithmeticExpression) e;
+            TimedExpression leftChild = bvAssign(b.getLeftChild());
+            TimedExpression rightChild = bvAssign(b.getRightChild());
+            return (i) -> "(" + b.getOperator() + " " + leftChild.generate(i) + " " + rightChild.generate(i) + ")";
+        } else {
+            throw new IllegalArgumentException("Assignment Expression not recognized: "+e);
         }
     }
 
@@ -656,8 +725,16 @@ public class TANetwork2Ae2sbvzot {
         String value = Integer.toString(constraint.getValue());
         String finalOperator = operator;
 
-        //Unbounded
-        return (i) -> "(" + finalOperator + " (" + varId + " " + i + ") " + value + ")";
+        // Need to also handle bounded variables (see sync parser)
+        TimedExpression variable;
+        VariableDecl v = variableMap.get(varId);
+        if (v instanceof BoundedVariableDecl) {
+            variable = (i) -> " (= ((_ extract " + i + " " + i + ") " + varId + ") #b1) ";
+        } else {
+            variable = (i) -> " ("+varId+" "+i+") ";
+        }
+
+        return (i) -> "(" + finalOperator + variable.generate(i) + value + ")";
     }
 
     private String boundedVariableGuardParser(VariableConstraintAtom constraint) {
