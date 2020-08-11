@@ -36,9 +36,7 @@ public class TANetwork2Ae2sbvzot {
     private final int vecSize;
     private final String vectorType;
 
-    private final Map<String, Integer> mapStateId;
     private final Map<Map.Entry<TA, Transition>, Integer> mapTransitionId;
-    private final Map<Map.Entry<TA, Integer>, Transition> mapIdTransition;
 
     //Keep track of max bound for each clock
     private Map<String, Integer> clockBounds;
@@ -60,16 +58,14 @@ public class TANetwork2Ae2sbvzot {
         SystemNormalizationVisitor.SystemContainer container = SystemNormalizationVisitor.normalize(
                 new SystemNormalizationVisitor.SystemContainer(
                         systemDecl, propositionsOfInterest, atomicpropositionsVariable));
-        this.system = container.system;
+        this.system = NullTransitionTransformer.transform(container.system);
         this.propositionsOfInterest = container.stateAPs;
         this.atomicpropositionsVariable = container.variableAssignementAPs;
 
         this.vecSize = bound+2;
         this.vectorType = "(_ BitVec " + this.vecSize + ")";
 
-        this.mapStateId = new HashMap<>();
         this.mapTransitionId = new HashMap<>();
-        this.mapIdTransition = new HashMap<>();
         this.clockBounds = new HashMap<>();
         this.allClocks = new HashSet<>();
         this.allVariables = new HashSet<>();
@@ -92,19 +88,10 @@ public class TANetwork2Ae2sbvzot {
                         new AbstractMap.SimpleEntry<>(e.getKey().getName(),e.getValue())
                     ).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a,b) -> a)));
             int count = 0;
-            for (State s : ta.getStates()) {
-                mapStateId.put(s.getStringId(), count);
-                count++;
-            }
-            count = 0;
             for (Transition t: ta.getTransitions()) {
                 mapTransitionId.put(new AbstractMap.SimpleEntry<>(ta, t), count);
-                mapIdTransition.put(new AbstractMap.SimpleEntry<>(ta, count), t);
                 count++;
             }
-            // null transition - TA stays in same state
-            mapTransitionId.put(new AbstractMap.SimpleEntry<>(ta, null), count);
-            mapIdTransition.put(new AbstractMap.SimpleEntry<>(ta, count), null);
         }
     }
 
@@ -324,7 +311,7 @@ public class TANetwork2Ae2sbvzot {
         //At least 1 TA must transition
         constraints.append("(assert (eqzeros (bvand");
         for (TA ta: system.getTimedAutomata()) {
-            constraints.append(" trans_" + ta.getIdentifier() + "_" + mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta,null)));
+            constraints.append(" null-trans_" + ta.getIdentifier());
         }
         constraints.append(")))\n");
 
@@ -338,23 +325,6 @@ public class TANetwork2Ae2sbvzot {
     }
 
     private void taBitVectors(TA ta) {
-        // Bit representation of states
-        int stateBits = intToNumBits(ta.getStates().size());
-        for (int i = 0; i < stateBits; i++) {
-            declarations.append("(declare-fun s_" + ta.getIdentifier() + "_" + i + " () " + vectorType + ")\n");
-            loopConstraints.append(assertExp("(=> loopex (loopConF s_" + ta.getIdentifier() + "_" + i + "))"));
-        }
-
-        //Shorthand for accessing individual states:
-        for (State s: ta.getStates()) {
-            declarations.append("(define-fun " + s.getStringId() + " () " + vectorType + "\n" +
-                    "    " + genStateBits(ta, s) + ")\n");
-        }
-
-        // if number of states != power of 2, there will be illegal combinations of the s_bits
-        constraints.append(assertExp("(eqones (bvor" + ta.getStates().stream().map(s -> " " + s.getStringId())
-                .collect(Collectors.joining()) + "))"));
-
         initalizations.append("; TA must start in initial state\n");
         initalizations.append("(assert (eqones (bvimpl (_ bv1 " + vecSize + ") " + ta.getInitialState().getStringId() + ")))\n");
 
@@ -364,22 +334,39 @@ public class TANetwork2Ae2sbvzot {
             declarations.append("(declare-fun t_" + ta.getIdentifier() + "_" + i + " () " + vectorType + ")\n");
             loopConstraints.append(assertExp("(=> loopex (loopConF t_" + ta.getIdentifier() + "_" + i + "))"));
         }
+
+        Set<Transition> nullTrans = ta.getTransitions().stream()
+                .filter(t -> t.getSync().getEvent().equals("nullTransition"))
+                .collect(Collectors.toSet());
+
         // Shorthand for accessing individual transitions:
-        Set<Transition> transitionSet = new HashSet<>(ta.getTransitions());
-        transitionSet.add(null);
-        for (Transition t: transitionSet) {
+        for (Transition t: ta.getTransitions()) {
             int transId = mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta, t));
             declarations.append("(define-fun trans_" + ta.getIdentifier() + "_" + transId + " () " + vectorType + "\n" +
                     "    " + genTransitionBits(ta, t) + ")\n");
         }
+        declarations.append("(define-fun null-trans_"+ta.getIdentifier()+" () "+vectorType+"\n"+
+                "    (bvor"+nullTrans.stream()
+                        .map(t -> " trans_"+ta.getIdentifier()+"_"+mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta,t)))
+                        .collect(Collectors.joining())+"))");
         // if the number of transitions isn't a power of 2 there will be illegal combinations of the t_bits
-        if (transitionSet.size() > 0) {
+        if (ta.getTransitions().size() > 0) {
             constraints.append("(assert (eqones (bvor");
-            for (Transition t : transitionSet) {
+            for (Transition t : ta.getTransitions()) {
                 int transId = mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta, t));
                 constraints.append(" trans_" + ta.getIdentifier() + "_" + transId);
             }
             constraints.append(")))\n");
+        }
+
+        for (State s: ta.getStates()) {
+            String stateTrans = ta.getTransitions().stream()
+                    .filter(t -> t.getSource().equals(s))
+                    .map(t -> " trans_"+ta.getIdentifier()+"_"+mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta, t)))
+                    .collect(Collectors.joining());
+
+            declarations.append("(define-fun " + s.getStringId() + " () " + vectorType + "\n" +
+                    "    (bvor zeros" + stateTrans + "))\n");
         }
 
         // following the convention used in past versions, if a transition t from state a to state b is true at
@@ -393,13 +380,6 @@ public class TANetwork2Ae2sbvzot {
             //assert that a transition implies the TA will be in the dest state next
             constraints.append("(assert (eqones (bvimpl (getprev " + transition + ") (getnext " + destState + "))))\n");
         }
-        // null transition constraint
-        constraints.append("(assert (eqones (bvimpl " + genTransition(ta, null) + " (bvand");
-        for (int i = 0; i < stateBits; i++) {
-            String sBit = "s_" + ta.getIdentifier() + "_" + i;
-            constraints.append(" (bviff (getnext " + sBit + ") (getprev " + sBit + "))");
-        }
-        constraints.append("))))\n");
     }
 
     private void taSync(TA ta) {
@@ -612,14 +592,6 @@ public class TANetwork2Ae2sbvzot {
                             combine2TimedExpressions("and", clockWeakInvariantParser(sourceConstraint), clockInvariantParser(destConstraint))))),
                     0, vecSize-1));
         }
-        for (State s: ta.getStates()) {
-            Invariant inv = s.getInvariant();
-            if (inv instanceof EmptyInvariant) continue;
-            TimedExpression stateBit = (i) -> "(= ((_ extract " + i + " " + i + ") " + s.getStringId() + ") #b1)";
-            ClockConstraintAtom constraint = invariantTransformer((ExpInvariant) inv);
-            constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>", stateBit,
-                    clockWeakInvariantParser(constraint))),0,vecSize-1));
-        }
     }
 
     private void loopLogic () {
@@ -674,8 +646,7 @@ public class TANetwork2Ae2sbvzot {
 
         //TODO: is strong transition liveness what we are implementing?
         for (TA ta: system.getTimedAutomata()) {
-            loopConstraints.append(assertExp("(not (= inloop (bvand inloop trans_" + ta.getIdentifier() + "_" +
-                    mapTransitionId.get(new AbstractMap.SimpleEntry<>(ta,null)) + ")))"));
+            loopConstraints.append(assertExp("(not (= inloop (bvand inloop null-trans_" + ta.getIdentifier() + ")))"));
         }
     }
 
@@ -842,33 +813,6 @@ public class TANetwork2Ae2sbvzot {
             }
         }
         return "(bvand" + bits.toString() + ")";
-    }
-
-    //TODO: removed from diff, but delete this when stateremove is finished
-    private String genStateBits(TA ta, State s) {
-        int stateBits = intToNumBits(ta.getStates().size());
-        int sId = mapStateId.get(s.getStringId());
-        List<String> bits = new LinkedList<>();
-        for (int i =0; i < stateBits; i++) {
-            if ((sId & (1 << i)) > 0) {
-                bits.add("s_" + ta.getIdentifier() + "_" + i);
-            } else {
-                bits.add("(bvnot s_" + ta.getIdentifier() + "_" + i + ")");
-            }
-        }
-        String result = "";
-        //Unfortunately this isn't lisp, bvand takes *exactly* two arguments
-        //TODO ^again, not true
-        while (bits.size() > 0) {
-            if (bits.size() == 1) {
-                return bits.remove(0);
-            } else {
-                String item1 = bits.remove(0);
-                String item2 = bits.remove(0);
-                bits.add("(bvand " + item1 + " " + item2 + ")");
-            }
-        }
-        return result;
     }
 
     String mitliIntegration () {
