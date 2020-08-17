@@ -588,8 +588,8 @@ public class TANetwork2Ae2sbvzot {
             }
             constraints.append(evalTimedExpression(assertExp(combine2TimedExpressions("=>",
                     transBit, combine2TimedExpressions("or",
-                            combine2TimedExpressions("and", clockInvariantParser(sourceConstraint), clockWeakInvariantParser(destConstraint)),
-                            combine2TimedExpressions("and", clockWeakInvariantParser(sourceConstraint), clockInvariantParser(destConstraint))))),
+                            combine2TimedExpressions("and", clockInvariantParser(sourceConstraint,true), (i)->clockWeakInvariantParser(destConstraint,false).generate(i+1)),
+                            combine2TimedExpressions("and", clockWeakInvariantParser(sourceConstraint,true), (i)->clockInvariantParser(destConstraint,false).generate(i+1))))),
                     0, vecSize-1));
         }
     }
@@ -747,21 +747,26 @@ public class TANetwork2Ae2sbvzot {
     }
 
     // Invariants
-    private TimedExpression clockInvariantParser(ClockConstraintAtom constraint) {
+    private TimedExpression clockInvariantParser(ClockConstraintAtom constraint, boolean delta) {
         if (constraint == null) return (i) -> "true";
         String operator = constraint.getOperator().toString();
         if (operator.equals("==")) operator = "=";
 
         String clockId = constraint.getClock().getName();
         String value = Integer.toString(constraint.getValue());
-        String resBegin = "(" + operator + " (" + clockId + " ";
-        String resEnd = ") " + value + ")";
-        //add 1 here because transition is true the instance *before* the transition, but constraints must be true
-        // the instance *of* the transition
-        return (i) -> resBegin + (i+1) + resEnd;
+        TimedExpression clock;
+        if (delta) {
+            clock = (i) -> "(+ (delta "+i+") ("+clockId+" "+i+")) ";
+        } else {
+            clock = (i) -> "("+clockId+" "+i+") ";
+        }
+        String resBegin = "("+operator+" ";
+        String resEnd = value + ")";
+
+        return (i) -> resBegin + clock.generate(i) + resEnd;
     }
 
-    private TimedExpression clockWeakInvariantParser(ClockConstraintAtom constraint) {
+    private TimedExpression clockWeakInvariantParser(ClockConstraintAtom constraint, boolean delta) {
         if (constraint == null) return (i) -> "true";
         String operator = constraint.getOperator().toString();
         if (operator.equals("==")) return (i) -> "false";
@@ -770,11 +775,16 @@ public class TANetwork2Ae2sbvzot {
 
         String clockId = constraint.getClock().getName();
         String value = Integer.toString(constraint.getValue());
-        String resBegin = "(" + operator + " (" + clockId + " ";
-        String resEnd = ") " + value + ")";
-        //add 1 here because transition is true the instance *before* the transition, but constraints must be true
-        // the instance *of* the transition
-        return (i) -> resBegin + (i+1) + resEnd;
+        TimedExpression clock;
+        if (delta) {
+            clock = (i) -> "(+ (delta "+i+") ("+clockId+" "+i+")) ";
+        } else {
+            clock = (i) -> "("+clockId+" "+i+") ";
+        }
+        String resBegin = "("+operator+" ";
+        String resEnd = value + ")";
+
+        return (i) -> resBegin + clock.generate(i) + resEnd;
     }
 
     private ClockConstraintAtom invariantTransformer(ExpInvariant inv) {
