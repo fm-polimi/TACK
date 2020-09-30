@@ -16,8 +16,7 @@ import zotrunner.HybridZotRunner;
 import zotrunner.ZotException;
 import zotrunner.ZotRunner;
 
-import java.io.IOException;
-import java.io.PrintStream;
+import java.io.*;
 import java.util.Set;
 
 public class HybridCLTLocsolver {
@@ -35,10 +34,24 @@ public class HybridCLTLocsolver {
 
     public boolean solve() throws IOException, ZotException {
         ZotPlugin zotPlugin = ZotPlugin.AE2SBVZOT;
+
+        File f = new File("config.txt");
+        boolean parallel = false;
+        if (f.exists()) {
+            BufferedReader reader = new BufferedReader(new FileReader(f));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if(line.startsWith("parallel: 2")) {
+                    parallel = true;
+                }
+            }
+            reader.close();
+        }
+
         CLTLoc2zot zotTransformer = new CLTLoc2zot(bound, mitliFormula.accept(new CLTLocGetMaxBound()), zotPlugin);
         zotTransformer.setDryRun(true);
         String zotEncoding = zotTransformer.apply(mitliFormula);
-        HybridZotRunner zotRunner = new HybridZotRunner(smtTA, zotEncoding, out);
+        HybridZotRunner zotRunner = new HybridZotRunner(smtTA, zotEncoding, out, parallel);
         return zotRunner.run();
 
 

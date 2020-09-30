@@ -190,7 +190,7 @@ public class SystemChecker {
 		File binding = new File("binding.txt");
 		FileUtils.writeStringToFile(binding, vocabularyBuilder.toString());
 
-		if (converter == null) {
+		if (converter instanceof TANetwork2Ae2sbvzot.FakeConverter) {
 			out.println("Converting TA to SMT");
 			out.println("************************************************");
 			final TANetwork2Ae2sbvzot smtConv= new TANetwork2Ae2sbvzot(system, atomicpropositions, atomicpropositionsVariable, bound);
@@ -213,7 +213,6 @@ public class SystemChecker {
 		timer.start();
 
 		final TANetwork2CLTLoc conv = converter;
-		final TANetwork2Ae2sbvzot smtConv= new TANetwork2Ae2sbvzot(system, atomicpropositions, atomicpropositionsVariable, bound);
 
 		taFormula = converter.convert(system, atomicpropositions, atomicpropositionsVariable);
 

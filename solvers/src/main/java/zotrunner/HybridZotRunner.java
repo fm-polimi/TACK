@@ -27,16 +27,23 @@ public class HybridZotRunner {
 
     private float checkingtime;
 
+    private final boolean parallel;
+
     /**
      *
      * @param mitliZotEncoding
      *            the zotEncoding to be verified
      */
     public HybridZotRunner(String TAz3Encoding, String mitliZotEncoding, PrintStream out) {
+        this(TAz3Encoding,mitliZotEncoding,out,false);
+    }
+
+    public HybridZotRunner(String TAz3Encoding, String mitliZotEncoding, PrintStream out, boolean parallel) {
         Preconditions.checkNotNull(mitliZotEncoding, "the zotEncoding cannot be null");
         this.TAz3Encoding = TAz3Encoding;
         this.mitliZotEncoding = mitliZotEncoding;
         this.out = out;
+        this.parallel = parallel;
     }
 
     public boolean run() throws IOException, ZotException {
@@ -51,7 +58,7 @@ public class HybridZotRunner {
         String[] command = { "zot", lispFile };
         String[] combineCommand = { "/bin/bash", "-c", "head -n -2 output.smt.txt > tmp.smt.txt;"+
                 " cat smt-ta.txt >> tmp.smt.txt; tail -n -2 output.smt.txt >> tmp.smt.txt;"+
-                " cat tmp.smt.txt "+//"| sed -E 's/\\(! smt [[:alnum:][:blank:]:_\\.]*/(par-or & :random-seed 1) & :random-seed 2)/'"+
+                " cat tmp.smt.txt "+ (parallel ? "| sed -E 's/\\(! smt [[:alnum:][:blank:]:_\\.]*/(par-or & :random-seed 1) & :random-seed 2)/'" : "")+
                 " > output.smt.txt; rm tmp.smt.txt; rm smt-ta.txt"};
         String[] z3Command = { "z3", "-smt2", "output.smt.txt" };
 

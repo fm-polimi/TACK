@@ -46,6 +46,7 @@ public class CLTLocsolver {
 
 		File f = new File("config.txt");
 		ZotPlugin zotPlugin = null;
+		boolean parallel = false;
 		if (f.exists()) {
 			BufferedReader reader = new BufferedReader(new FileReader(f));
 			String line;
@@ -53,6 +54,9 @@ public class CLTLocsolver {
 				if(line.startsWith("solver: ")) {
 					String solver = line;
 					zotPlugin = ZotPlugin.valueOf(line.substring("solver: ".length(), line.length()).toUpperCase());
+				}
+				if(line.startsWith("parallel: 2")) {
+					parallel = true;
 				}
 			}
 			reader.close();
@@ -62,7 +66,11 @@ public class CLTLocsolver {
 			zotPlugin = ZotPlugin.AE2ZOT;
 		}
 
-		String zotEncoding = new CLTLoc2zot(bound, formula.accept(new CLTLocGetMaxBound()), zotPlugin).apply(formula);
+		CLTLoc2zot zotTransformer = new CLTLoc2zot(bound, formula.accept(new CLTLocGetMaxBound()), zotPlugin);
+		if (zotPlugin == ZotPlugin.AE2SBVZOT && parallel) {
+			zotTransformer.setDryRun(true);
+		}
+		String zotEncoding = zotTransformer.apply(formula);
 		timer.stop();
 		cltloc2zottime = timer.elapsed(TimeUnit.MILLISECONDS);
 
@@ -70,7 +78,7 @@ public class CLTLocsolver {
 		timer.reset();
 		timer.start();
 
-		ZotRunner zotRunner = new ZotRunner(zotEncoding, out);
+		ZotRunner zotRunner = new ZotRunner(zotEncoding, out, parallel);
 		boolean sat = zotRunner.run();
 
 		timer.stop();

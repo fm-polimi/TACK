@@ -8,6 +8,7 @@ import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
+import config.Config;
 import org.antlr.v4.runtime.ANTLRFileStream;
 import org.antlr.v4.runtime.ANTLRInputStream;
 import org.antlr.v4.runtime.CommonTokenStream;
@@ -21,12 +22,14 @@ import formulae.mitli.parser.MITLIParser;
 import ta.SystemDecl;
 import ta.parser.TALexer;
 import ta.parser.TAParser;
+import ta.visitors.TANetwork2Ae2sbvzot;
 import ta.visitors.TANetwork2CLTLoc;
 import ta.visitors.TANetwork2CLTLocO;
 import ta.visitors.TANetwork2CLTLocRC;
 import ta.visitors.liveness.LivenessEachTAProgresses;
 import ta.visitors.liveness.NoProgressesRequired;
 import tack.checker.SystemChecker;
+import tack.checker.SystemCheckerSMT;
 
 public class Tack {
 
@@ -77,6 +80,22 @@ public class Tack {
 
 		out.println("Model loaded");
 
+		Config config = new Config(new File("config.txt"),Integer.parseInt(bound));
+		if (config.solver.equals("ta2smt")) {
+			SystemCheckerSMT systemCheckerSMT = new SystemCheckerSMT(system, formula, config, out);
+			boolean result = systemCheckerSMT.check();
+			out.println(
+					"------------------------------------------------------------------------------------------------------------------------------------------------------------");
+
+			out.println("The property of interest is : " + ((result) ? "satisfied" : "not satisfied"));
+			out.println(((result) ? "" : "check the file counterexample.txt to see the violating trace"));
+			out.println(((result) ? ""
+					: "the mapping between the elements of the model and the used id can be found in the file elementsIDmap.txt"));
+			out.println(
+					"------------------------------------------------------------------------------------------------------------------------------------------------------------");
+			System.exit((result) ? 0 : 1);
+		}
+
 		TANetwork2CLTLoc converter = null;
 		File f = new File("config.txt");
 		ZotPlugin zotPlugin = null;
@@ -100,12 +119,15 @@ public class Tack {
 						converter.setLivenessConverter(new NoProgressesRequired());
 					}
 				}
+				if (line.startsWith("solver: hybrid")) {
+					converter = new TANetwork2Ae2sbvzot.FakeConverter();
+				}
 			}
 			reader.close();
 		}
 
 		if (converter == null) {
-			//converter = new TANetwork2CLTLocRC();
+			converter = new TANetwork2CLTLocRC();
 		}
 
 		out.println("Semantic loaded");
