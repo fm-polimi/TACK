@@ -1,0 +1,5 @@
+G_i+ 0 (! (|| (GearControl_COpenError)
+              (GearControl_GNeuError)
+              (GearControl_GSetError)
+              (GearControl_GSetError)
+          ))

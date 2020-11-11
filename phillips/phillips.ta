@@ -1,0 +1,348 @@
+//
+// Phillips Audio Protocol
+//
+// Robert Lawrence Smith
+
+clock x,y;
+int c=0,leng=0;
+int k{0,1} = 0;
+int m{0,1} = 0;
+
+process Input {
+
+state start, head_is_1, head_is_0, endeven_00, stop;
+init start;
+trans
+    start -> head_is_1 {
+        assign c:=1, k:=0, leng:=1;
+    },
+    head_is_1 -> head_is_1 {
+        sync head_1?;
+    },
+    head_is_1 -> head_is_1 {
+        guard k == 0;
+        sync input_1!;
+        assign k:=1, c:=c+c+1, leng:=leng+1;
+    },
+    head_is_1 -> head_is_1 {
+        guard k == 1;
+        sync input_1!;
+        assign k:=0, c:=c+c+1, leng:=leng+1;
+    },
+    head_is_1 -> head_is_0 {
+        guard k == 0;
+        sync input_1!;
+        assign k:=1, c:=c+c, leng:=leng+1;
+    },
+    head_is_1 -> head_is_0 {
+        guard k == 1;
+        sync input_1!;
+        assign k:=0, c:=c+c, leng:=leng+1;
+    },
+    head_is_1 -> stop {
+        guard k == 0;
+        sync input_1!;
+    },
+    head_is_0 -> head_is_1 {
+        guard k == 0;
+        sync input_0!;
+        assign k:=1, c:=c+c+1, leng:=leng+1;
+    },
+    head_is_0 -> head_is_1 {
+        guard k == 1;
+        sync input_0!;
+        assign k:=0, c:=c+c+1, leng:=leng+1;
+    },
+    head_is_0 -> head_is_0 {
+        sync head_0?;
+    },
+    head_is_0 -> head_is_0 {
+        guard k == 0;
+        sync input_0!;
+        assign k:=1, c:=c+c, leng:=leng+1;
+    },
+    head_is_0 -> head_is_0 {
+        guard k == 1;
+        sync input_0!;
+        assign k:=0, c:=c+c, leng:=leng+1;
+    },
+    head_is_0 -> endeven_00 {
+        sync input_0!;
+        assign c:=c+c, leng:=leng+1;
+    },
+    head_is_0 -> stop {
+        guard k == 0;
+        sync input_0!;
+    },
+    endeven_00 -> endeven_00 {
+        sync head_0?;
+    },
+    endeven_00 -> stop {
+        sync input_0!;
+    },
+    stop -> stop {
+        sync head_e?;
+    };
+}
+
+process Sender {
+state start, rise_1{x <= 1}, transhigh{x <= 2}, transhigh_1{x <= 200}, translow_1{x <= 200},
+    translow_1a{x<=400}, transhigh_0a{x<=400}, transhigh_0{x<=200}, rise_0{x<=1}, translow_0{x<=200},
+    translow{x<=1}, stop;
+init start;
+trans
+start -> rise_1 {
+    sync input_1?;
+    assign x:=0;
+},
+rise_1 -> transhigh {
+    guard x == 1;
+    sync up!;
+},
+transhigh -> transhigh_1 {
+    guard x == 2;
+    sync head_1!;
+},
+transhigh -> transhigh_1 {
+    guard x == 2;
+    sync head_e!;
+},
+transhigh -> transhigh_0a {
+    guard x == 2;
+    sync head_0!;
+},
+transhigh_1 -> stop {
+    guard x == 200;
+    sync head_e!;
+},
+transhigh_1 -> translow_1 {
+    guard x == 200;
+    sync head_1!;
+    assign x:=0;
+},
+translow_1 -> rise_1 {
+    guard x == 200;
+    sync input_1?;
+    assign x:=0;
+},
+transhigh_0a -> translow {
+    guard x == 400;
+    sync input_0?;
+    assign x:=0;
+},
+translow -> translow_0 {
+    guard x == 1;
+    sync head_0!;
+},
+translow_0 -> rise_0 {
+    guard x == 200;
+    sync head_0!;
+    assign x:=0;
+},
+rise_0 -> transhigh_0 {
+    guard x == 1;
+    sync up!;
+},
+transhigh_0 -> translow {
+    guard x == 200;
+    sync input_0?;
+    assign x:=0;
+},
+translow -> stop {
+    guard x == 1;
+    sync head_e!;
+},
+translow -> translow_1a {
+    guard x == 1;
+    sync head_1!;
+},
+translow_1a -> rise_1 {
+    guard x == 400;
+    sync input_1?;
+    assign x:=0;
+};
+
+}
+
+process Receiver {
+state start, up_1{y <= 1}, last_is_1{y<=900}, next_is_01{y <= 1}, last_is_0{y<=700}, up_0{y<=1}, error, stop;
+init start;
+trans
+start -> up_1 {
+    sync up?;
+    assign y:=0, m:=1;
+},
+up_1 -> last_is_1 {
+    guard y == 1;
+    sync output_1!;
+},
+up_1 -> error {
+    guard y == 1;
+    sync output_neq_1!;
+},
+last_is_1 -> stop {
+    guard y == 900, m == 0;
+    sync output_0!;
+    assign y:=0;
+},
+last_is_1 -> stop {
+    guard y ==900, m == 1;
+    assign y:=0;
+},
+last_is_1 -> up_1 {
+    guard y >= 300, y <= 500, m == 0;
+    sync up?;
+    assign m:=1, y:=0;
+},
+last_is_1 -> up_1 {
+    guard y >= 300, y <= 500, m == 1;
+    sync up?;
+    assign m:=0, y:=0;
+},
+last_is_1 -> next_is_01 {
+    guard y >= 700, y <= 900;
+    sync up?;
+    assign y:=0;
+},
+last_is_1 -> up_0 {
+    guard y >= 500, y <= 700, m == 1;
+    sync up?;
+    assign m:=0, y:=0;
+},
+last_is_1 -> up_0 {
+    guard y >= 500, y <= 700, m == 0;
+    sync up?;
+    assign m:=1, y:=0;
+},
+last_is_1 -> error {
+    guard y <= 300;
+    sync up?;
+},
+last_is_1 -> error {
+    guard y == 900, m==0;
+    sync output_neq_0!;
+},
+next_is_01 -> up_1 {
+    guard y == 1;
+    sync output_0!;
+},
+next_is_01 -> error {
+    guard y == 1;
+    sync output_neq_0!;
+},
+up_0 -> last_is_0 {
+    guard y == 1;
+    sync output_0!;
+},
+up_0 -> error {
+    guard y == 1;
+    sync output_neq_0!;
+},
+last_is_0 -> stop {
+    guard y == 700;
+    sync output_0!;
+    assign y := 0;
+},
+last_is_0 -> next_is_01 {
+    guard y >= 500, y <= 700;
+    sync up?;
+    assign y := 0;
+},
+last_is_0 -> up_0 {
+    guard y >= 300, y <= 500, m == 1;
+    sync up?;
+    assign m := 0, y := 0;
+},
+last_is_0 -> up_0 {
+    guard y >= 300, y <= 500, m == 0;
+    sync up?;
+    assign m := 1, y := 0;
+},
+last_is_0 -> error {
+    guard y <= 3;
+    sync up?;
+},
+stop -> error {
+    guard leng >= 1;
+};
+
+}
+
+process Output_Ack {
+state ack;
+init ack;
+trans
+ack -> ack {
+    guard leng == 0;
+    sync output_neq_1?;
+},
+ack -> ack {
+    guard leng == 1, c == 0;
+    sync output_neq_1?;
+},
+ack -> ack {
+    guard leng == 2, c <= 1;
+    sync output_neq_1?;
+},
+ack -> ack {
+    guard leng == 3, c <= 3;
+    sync output_neq_1?;
+},
+ack -> ack {
+    guard leng >= 4;
+    sync output_neq_1?;
+},
+ack -> ack {
+    guard leng == 3, c <= 3;
+    sync output_0?;
+    assign leng:=2;
+},
+ack -> ack {
+    guard leng == 2, c <= 1;
+    sync output_0?;
+    assign leng:=1;
+},
+ack -> ack {
+    guard leng == 1, c == 0;
+    sync output_0?;
+    assign leng:=0;
+},
+ack -> ack {
+    guard leng >= 4;
+    sync output_neq_0?;
+},
+ack -> ack {
+    guard leng == 3, c >= 4;
+    sync output_neq_0?;
+},
+ack -> ack {
+    guard leng == 2, c >= 2;
+    sync output_neq_0?;
+},
+ack -> ack {
+    guard leng == 1, c == 1;
+    sync output_neq_0?;
+},
+ack -> ack {
+    guard leng == 0;
+    sync output_neq_0?;
+},
+ack -> ack {
+    guard leng == 3, c >= 4;
+    sync output_1?;
+    assign c := c-4, leng := 2;
+},
+ack -> ack {
+    guard leng == 2, c >= 2;
+    sync output_1?;
+    assign c := c-2, leng := 1;
+},
+ack -> ack {
+    guard leng == 1, c == 1;
+    sync output_1?;
+    assign c := 0, leng := 0;
+};
+
+}
+
+system Input, Sender, Rceiver, Output_Ack;

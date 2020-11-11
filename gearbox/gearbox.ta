@@ -1,0 +1,381 @@
+
+clock SysTimer, GCTimer, GBTimer, CTimer, ETimer;
+
+int FromGear{0,1,2,3,4,5,6} = 0;
+int ToGear{0,1,2,3,4,5,6} = 0;
+int UseCase{0,1,2} = 0;
+int ErrStat{0,1,2,3,4} = 0;
+
+
+process Interface {
+state GearN, chkGearNR, GearR, chkGearRN, chkGearN1, Gear1, chkGear1N,
+      chkGear12, Gear2, chkGear21, chkGear23, Gear3, chkGear32,
+      chkGear34, Gear4, chkGear43, chkGear45, Gear5, chkGear54;
+init GearN;
+trans
+	GearN -> chkGearNR {
+		sync ReqNewGear!;
+		assign FromGear:=0, ToGear:=6;
+	},
+	GearN -> chkGearN1 {
+		sync ReqNewGear!;
+		assign FromGear:=0, ToGear:=1;
+	},
+	chkGearNR -> GearR {
+		sync NewGear?;
+	},
+	GearR -> chkGearRN {
+		sync ReqNewGear!;
+		assign FromGear:=6, ToGear:=0;
+	},
+	chkGearRN -> GearN {
+		sync NewGear?;
+	},
+	chkGearN1 -> Gear1 {
+		sync NewGear?;
+	},
+	Gear1 -> chkGear1N {
+		sync ReqNewGear!;
+		assign FromGear:=1, ToGear:=0;
+	},
+	Gear1 -> chkGear12 {
+		sync ReqNewGear!;
+		assign FromGear:=1, ToGear:=2;
+	},
+	chkGear1N -> GearN {
+		sync NewGear?;
+	},
+	chkGear12 -> Gear2 {
+		sync NewGear?;
+	},
+	Gear2 -> chkGear21 {
+		sync ReqNewGear!;
+		assign FromGear:=2, ToGear:=1;
+	},
+	Gear2 -> chkGear23 {
+		sync ReqNewGear!;
+		assign FromGear:=2, ToGear:=3;
+	},
+	chkGear21 -> Gear1 {
+		sync NewGear?;
+	},
+	chkGear23 -> Gear3 {
+		sync NewGear?;
+	},
+	Gear3 -> chkGear32 {
+		sync ReqNewGear!;
+		assign FromGear:=3, ToGear:=2;
+	},
+	Gear3 -> chkGear34 {
+		sync ReqNewGear!;
+		assign FromGear:=3, ToGear:=4;
+	},
+	chkGear32 -> Gear2 {
+		sync NewGear?;
+	},
+	chkGear34 -> Gear4 {
+		sync NewGear?;
+	},
+	Gear4 -> chkGear43 {
+		sync ReqNewGear!;
+		assign FromGear:=4, ToGear:=3;
+	},
+	Gear4 -> chkGear45 {
+		sync ReqNewGear!;
+		assign FromGear:=4, ToGear:=5;
+	},
+	chkGear43 -> Gear3 {
+		sync NewGear?;
+	},
+	chkGear45 -> Gear5 {
+		sync NewGear?;
+	},
+	Gear5 -> chkGear54 {
+		sync ReqNewGear!;
+		assign FromGear:=5, ToGear:=4;
+	},
+	chkGear54 -> Gear4 {
+		sync NewGear?;
+	};
+}
+
+process GearControl {
+state Gear, Initiate{GCTimer <= 1}, CheckTorque{GCTimer <= 255},
+      ReqNeuGear{GCTimer <= 1}, CheckGearNeu{GCTimer <= 250},
+      CheckClutch2{GCTimer <= 200}, COpenError, ClutchOpen2{GCTimer <= 1},
+      CheckGearNeu2{GCTimer <= 250}, GNeuError, ReqSyncSpeed{GCTimer<=1},
+      CheckSyncSpeed{GCTimer < 150}, CheckClutch{GCTimer<=200},
+      ReqSetGear2{GCTimer<=1}, ReqSetGear{GCTimer<=1},
+      ClutchOpen{GCTimer<=1}, CheckGearSet1{GCTimer<=350},
+      GSetError, CheckGearSet2{GCTimer<=350},
+      ReqTorqueC{GCTimer<=1}, CheckClutchClosed{GCTimer<=200},
+      ClutchClose{GCTimer<=1}, CCloseError, CheckClutchClosed2{GCTimer<=200},
+      GearChanged{GCTimer<=1};
+init Gear;
+trans
+	Gear -> Initiate {
+		sync ReqNewGear?;
+		assign SysTimer:=0, GCTimer:=0;
+	},
+	Initiate -> CheckTorque {
+		guard FromGear > 0;
+		sync ReqZeroTorque!;
+	},
+	Initiate -> ReqSyncSpeed {
+		guard FromGear<=0;
+	},
+	CheckTorque -> CheckClutch2 {
+		guard GCTimer >= 250;
+		sync OpenClutch!;
+		assign GCTimer:=0;
+	},
+	CheckTorque -> ReqNeuGear {
+		guard GCTimer < 250;
+		sync TorqueZero?;
+		assign GCTimer:=0;
+	},
+	ReqNeuGear -> CheckGearNeu {
+		sync ReqNeu!;
+	},
+	CheckGearNeu -> GNeuError {
+		guard GCTimer>200, GCTimer<=250;
+	},
+	CheckGearNeu -> ReqSyncSpeed {
+		sync GearNeu?;
+		assign GCTimer:=0;
+	},
+	ReqSyncSpeed -> CheckSyncSpeed {
+		guard ToGear>0;
+		sync ReqSpeed!;
+	},
+	ReqSyncSpeed -> GearChanged {
+		guard ToGear<=0;
+	},
+	CheckSyncSpeed -> CheckClutch {
+		guard GCTimer>=150;
+		sync OpenClutch!;
+		assign GCTimer:=0;
+	},
+	CheckSyncSpeed -> ReqSetGear {
+		guard GCTimer<150;
+		sync SpeedSet?;
+		assign GCTimer:=0;
+	},
+	ReqSetGear -> CheckGearSet1 {
+		sync ReqSet!;
+	},
+	CheckGearSet1 -> ReqTorqueC {
+		sync GearSet?;
+		assign GCTimer:=0;
+	},
+	CheckGearSet1 -> GSetError {
+		guard GCTimer>300, GCTimer<=350;
+	},
+	ReqTorqueC -> GearChanged {
+		sync ReqTorque!;
+	},
+	GearChanged -> Gear {
+		sync NewGear!;
+	},
+	CheckClutch2 -> COpenError {
+		guard GCTimer>150, GCTimer<=200;
+	},
+	CheckClutch2 -> ClutchOpen2 {
+		sync ClutchIsOpen?;
+		assign GCTimer:=0;
+	},
+	ClutchOpen2 -> CheckGearNeu2 {
+		sync ReqNeu!;
+	},
+	CheckGearNeu2 -> GNeuError {
+		guard GCTimer>200, GCTimer<=250;
+	},
+	CheckGearNeu2 -> ReqSetGear2 {
+		sync GearNeu?;
+		assign GCTimer:=0;
+	},
+	ReqSetGear2 -> CheckGearSet2 {
+		guard ToGear>0;
+		sync ReqSet!;
+	},
+	ReqSetGear2 -> CheckClutchClosed2 {
+		guard ToGear==0;
+		sync CloseClutch!;
+	},
+	CheckClutch -> COpenError {
+		guard GCTimer>150,GCTimer<=200;
+	},
+	CheckClutch -> ClutchOpen {
+		sync ClutchIsOpen?;
+		assign GCTimer:=0;
+	},
+	ClutchOpen -> CheckGearSet2 {
+		sync ReqSet!;
+	},
+	CheckGearSet2 -> GSetError {
+		guard GCTimer>300, GCTimer<=350;
+	},
+	CheckGearSet2 -> ClutchClose {
+		sync GearSet?;
+		assign GCTimer:=0;
+	},
+	ClutchClose -> CheckClutchClosed {
+		sync CloseClutch!;
+	},
+	CheckClutchClosed -> ReqTorqueC {
+		sync ClutchIsClosed?;
+		assign GCTimer:=0;
+	},
+	CheckClutchClosed -> CCloseError {
+		guard GCTimer>150, GCTimer<=200;
+	},
+	CheckClutchClosed2 -> CCloseError {
+		guard GCTimer>150, GCTimer <=200;
+	},
+	CheckClutchClosed2 -> GearChanged {
+		sync ClutchIsClosed?;
+		assign GCTimer:=0;
+	},
+
+	// Loop transitions in Error states
+	COpenError -> COpenError {},
+	GNeuError -> GNeuError {},
+	GSetError -> GSetError {},
+	CCloseError -> CCloseError {};
+}
+
+process GearBox {
+state Neutral, Closing{GBTimer <= 300}, ErrorIdle, Idle, 
+      Opening{GBTimer <= 200}, ErrorNeu;
+init Neutral;
+trans
+	Neutral -> Closing {
+		sync ReqSet?;
+		assign GBTimer:=0;
+	},
+	Closing -> ErrorIdle {
+		guard GBTimer==300;
+		assign ErrStat:=3;
+	},
+	Closing -> Idle {
+		guard GBTimer >= 100;
+		sync GearSet!;
+	},
+	Idle -> Opening {
+		sync ReqNeu?;
+		assign GBTimer:=0;
+	},
+	Opening -> ErrorNeu {
+		guard GBTimer >= 200;
+		assign ErrStat:=4;
+	},
+	Opening -> Neutral {
+		guard GBTimer >= 100;
+		sync GearNeu!;
+	},
+	//Loop Transitions in Error States
+	ErrorIdle -> ErrorIdle {},
+	ErrorNeu -> ErrorNeu {};
+}
+
+process Clutch {
+state Closed, Opening{CTimer <= 150}, ErrorOpen, Open,
+      Closing{CTimer <= 150}, ErrorClose;
+init Closed;
+trans
+	Closed -> Opening {
+		sync OpenClutch?;
+		assign CTimer:=0;
+	},
+	Opening -> ErrorOpen {
+		guard CTimer == 150;
+		assign ErrStat := 2;
+	},
+	Opening -> Open {
+		guard CTimer >= 100;
+		sync ClutchIsOpen!;
+	},
+	Open -> Closing {
+		sync CloseClutch?;
+		assign CTimer:=0;
+	},
+	Closing -> ErrorClose {
+		guard CTimer == 150;
+		assign ErrStat:=1;
+	},
+	Closing -> Closed {
+		guard CTimer >= 100;
+		sync ClutchIsClosed!;
+	},
+	//Loop Transitions in Error States
+	ErrorOpen -> ErrorOpen {},
+	ErrorClose -> ErrorClose {};
+}
+
+process Engine {
+state Initial, FindSpeed{ETimer <= 200}, ClutchOpen{ETimer <= 1},
+      ClutchClose{ETimer <= 900}, ErrorSpeed, Speed{ETimer <= 500},
+      Torque, DecTorque{ETimer <= 400}, Zero;
+init Initial;
+trans
+	Initial -> FindSpeed {
+		sync ReqSpeed?;
+		assign ETimer:=0,UseCase:=0;
+	},
+	FindSpeed -> Speed {
+		guard ETimer >= 50;
+		sync SpeedSet!;
+		assign ETimer:=0;
+	},
+	FindSpeed -> ClutchOpen {
+		guard ETimer == 200;
+		assign UseCase:=2,ETimer:=0;
+	},
+	ClutchOpen -> ClutchClose {
+		guard ToGear > 0;
+		assign ETimer:=0;
+	},
+	ClutchOpen -> Initial {
+		guard ToGear == 0;
+	},
+	ClutchClose -> ErrorSpeed {
+		guard ETimer == 900;
+	},
+	ClutchClose -> Torque {
+		guard ETimer >= 50;
+		sync ReqTorque?;
+	},
+	Speed -> ErrorSpeed {
+		guard ETimer == 500;
+	},
+	Speed -> Torque {
+		guard ETimer < 500;
+		sync ReqTorque?;
+	},
+	Torque -> DecTorque {
+		sync ReqZeroTorque?;
+		assign ETimer:=0, UseCase:=0;
+	},
+	DecTorque -> ClutchOpen {
+		guard ETimer == 400;
+		assign UseCase:=1;
+	},
+	DecTorque -> Zero {
+		guard ETimer >= 150;
+		sync TorqueZero!;
+	},
+	Zero -> Initial {
+		guard ToGear == 0;
+	},
+	Zero -> FindSpeed {
+		guard ToGear > 0;
+		sync ReqSpeed?;
+		assign ETimer:=0;
+	},
+	//Loop Transitions for Error States
+	ErrorSpeed -> ErrorSpeed {};
+}
+
+system Interface, GearControl, GearBox, Clutch, Engine;
+
+
