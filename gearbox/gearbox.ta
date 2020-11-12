@@ -113,6 +113,12 @@ state Gear, Initiate{GCTimer <= 1}, CheckTorque{GCTimer <= 255},
       GearChanged{GCTimer<=1};
 init Gear;
 trans
+    // Loop transitions for error states
+    COpenError -> COpenError {},
+    GNeuError -> GNeuError {},
+    GSetError -> GSetError {},
+    CCloseError -> CCloseError {},
+
 	Gear -> Initiate {
 		sync ReqNewGear?;
 		assign SysTimer:=0, GCTimer:=0;
@@ -249,6 +255,10 @@ state Neutral, Closing{GBTimer <= 300}, ErrorIdle, Idle,
       Opening{GBTimer <= 200}, ErrorNeu;
 init Neutral;
 trans
+    // Loop Transitions for Error states
+    ErrorIdle -> ErrorIdle {},
+    ErrorNeu -> ErrorNeu {},
+
 	Neutral -> Closing {
 		sync ReqSet?;
 		assign GBTimer:=0;
@@ -283,6 +293,10 @@ state Closed, Opening{CTimer <= 150}, ErrorOpen, Open,
       Closing{CTimer <= 150}, ErrorClose;
 init Closed;
 trans
+    // Loop Transitions for Error states
+    ErrorOpen -> ErrorOpen {},
+    ErrorClose -> ErrorClose {},
+
 	Closed -> Opening {
 		sync OpenClutch?;
 		assign CTimer:=0;
@@ -318,6 +332,9 @@ state Initial, FindSpeed{ETimer <= 200}, ClutchOpen{ETimer <= 1},
       Torque, DecTorque{ETimer <= 400}, Zero;
 init Initial;
 trans
+    // Loop Transitions for Error states
+    ErrorSpeed -> ErrorSpeed {},
+
 	Initial -> FindSpeed {
 		sync ReqSpeed?;
 		assign ETimer:=0,UseCase:=0;
