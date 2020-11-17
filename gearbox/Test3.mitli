@@ -1,0 +1,15 @@
+G_i+ 0 (&&
+            (-> (GearControl_CCloseError)
+                (Clutch_ErrorClose))
+            (-> (GearControl_COpenError)
+                (Clutch_ErrorOpen))
+            (-> (GearControl_GSetError)
+                (GearBox_ErrorIdle))
+            (-> (GearControl_GNeuError)
+                (GearBox_ErrorNeu))
+            (-> (Engine_ErrorSpeed)
+                (ErrStat > 0))
+            (-> (Engine_Torque)
+                (Clutch_Closed))
+       )
+

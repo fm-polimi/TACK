@@ -3,6 +3,5 @@ G_i+ 0 (&& (-> (GearControl_Initiate)
                                 (GearControl_GearChanged))))
            (-> (GearControl_Initiate)
                (F_ii 0 1000 (-> (&& (ErrStat == 0) (UseCase == 0))
-                                (GearControl_GearChanged)))))
-
-
+                                (GearControl_GearChanged))))
+       )

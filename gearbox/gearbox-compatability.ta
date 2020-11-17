@@ -2,14 +2,21 @@
 //
 // Gearbox Controller
 //
+// Compatibilty version - compatible with legacy TACK TA->CLTLoc translation
+// Changes: Added Binary variables 'FromZeroNonzero' & 'ToZeroNonzero'
+//          because legacy version only supports equality tests on variables,
+//          and not comparisons (e.g. ToGear > 0). Guards were rewritten.
 //
 // Robert Lawrence Smith
 // smithrobertlawrence@gmail.com
 
+
 clock SysTimer, GCTimer, GBTimer, CTimer, ETimer;
 
 int FromGear{0,1,2,3,4,5,6} = 0;
-int ToGear{0,1,2,3,4,5,6} = 0;
+int FromZeroNonzero{0,1} = 1; // 0 == 0, 1 == Not Zero
+int ToGear{0,1,2,3,4,5,6} = 1;
+int ToZeroNonzero{0,1} = 1; // 0 == 0, 1 == Not Zero
 int UseCase{0,1,2} = 0;
 int ErrStat{0,1,2,3,4} = 0;
 
@@ -22,18 +29,18 @@ init GearN;
 trans
 	GearN -> chkGearNR {
 		sync ReqNewGear!;
-		assign FromGear:=0, ToGear:=6;
+		assign FromGear:=0, ToGear:=6, FromZeroNonzero:=0, ToZeroNonzero:=1;
 	},
 	GearN -> chkGearN1 {
 		sync ReqNewGear!;
-		assign FromGear:=0, ToGear:=1;
+		assign FromGear:=0, ToGear:=1, FromZeroNonzero:=0, ToZeroNonzero:=1;
 	},
 	chkGearNR -> GearR {
 		sync NewGear?;
 	},
 	GearR -> chkGearRN {
 		sync ReqNewGear!;
-		assign FromGear:=6, ToGear:=0;
+		assign FromGear:=6, ToGear:=0, FromZeroNonzero:=1, ToZeroNonzero:=0;
 	},
 	chkGearRN -> GearN {
 		sync NewGear?;
@@ -43,11 +50,11 @@ trans
 	},
 	Gear1 -> chkGear1N {
 		sync ReqNewGear!;
-		assign FromGear:=1, ToGear:=0;
+		assign FromGear:=1, ToGear:=0, FromZeroNonzero:=1, ToZeroNonzero:=0;
 	},
 	Gear1 -> chkGear12 {
 		sync ReqNewGear!;
-		assign FromGear:=1, ToGear:=2;
+		assign FromGear:=1, ToGear:=2, FromZeroNonzero:=1, ToZeroNonzero:=1;
 	},
 	chkGear1N -> GearN {
 		sync NewGear?;
@@ -57,11 +64,11 @@ trans
 	},
 	Gear2 -> chkGear21 {
 		sync ReqNewGear!;
-		assign FromGear:=2, ToGear:=1;
+		assign FromGear:=2, ToGear:=1, FromZeroNonzero:=1, ToZeroNonzero:=1;
 	},
 	Gear2 -> chkGear23 {
 		sync ReqNewGear!;
-		assign FromGear:=2, ToGear:=3;
+		assign FromGear:=2, ToGear:=3, FromZeroNonzero:=1, ToZeroNonzero:=1;
 	},
 	chkGear21 -> Gear1 {
 		sync NewGear?;
@@ -71,11 +78,11 @@ trans
 	},
 	Gear3 -> chkGear32 {
 		sync ReqNewGear!;
-		assign FromGear:=3, ToGear:=2;
+		assign FromGear:=3, ToGear:=2, FromZeroNonzero:=1, ToZeroNonzero:=1;
 	},
 	Gear3 -> chkGear34 {
 		sync ReqNewGear!;
-		assign FromGear:=3, ToGear:=4;
+		assign FromGear:=3, ToGear:=4, FromZeroNonzero:=1, ToZeroNonzero:=1;
 	},
 	chkGear32 -> Gear2 {
 		sync NewGear?;
@@ -85,11 +92,11 @@ trans
 	},
 	Gear4 -> chkGear43 {
 		sync ReqNewGear!;
-		assign FromGear:=4, ToGear:=3;
+		assign FromGear:=4, ToGear:=3, FromZeroNonzero:=1, ToZeroNonzero:=1;
 	},
 	Gear4 -> chkGear45 {
 		sync ReqNewGear!;
-		assign FromGear:=4, ToGear:=5;
+		assign FromGear:=4, ToGear:=5, FromZeroNonzero:=1, ToZeroNonzero:=1;
 	},
 	chkGear43 -> Gear3 {
 		sync NewGear?;
@@ -99,7 +106,7 @@ trans
 	},
 	Gear5 -> chkGear54 {
 		sync ReqNewGear!;
-		assign FromGear:=5, ToGear:=4;
+		assign FromGear:=5, ToGear:=4, FromZeroNonzero:=1, ToZeroNonzero:=1;
 	},
 	chkGear54 -> Gear4 {
 		sync NewGear?;
@@ -111,7 +118,7 @@ state Gear, Initiate{GCTimer <= 1}, CheckTorque{GCTimer <= 255},
       ReqNeuGear{GCTimer <= 1}, CheckGearNeu{GCTimer <= 250},
       CheckClutch2{GCTimer <= 200}, COpenError, ClutchOpen2{GCTimer <= 1},
       CheckGearNeu2{GCTimer <= 250}, GNeuError, ReqSyncSpeed{GCTimer<=1},
-      CheckSyncSpeed{GCTimer < 150}, CheckClutch{GCTimer<=200},
+      CheckSyncSpeed{GCTimer <= 155}, CheckClutch{GCTimer<=200},
       ReqSetGear2{GCTimer<=1}, ReqSetGear{GCTimer<=1},
       ClutchOpen{GCTimer<=1}, CheckGearSet1{GCTimer<=350},
       GSetError, CheckGearSet2{GCTimer<=350},
@@ -131,11 +138,11 @@ trans
 		assign SysTimer:=0, GCTimer:=0;
 	},
 	Initiate -> CheckTorque {
-		guard FromGear > 0;
+		guard FromZeroNonzero==1;
 		sync ReqZeroTorque!;
 	},
 	Initiate -> ReqSyncSpeed {
-		guard FromGear<=0;
+		guard FromZeroNonzero==0;
 	},
 	CheckTorque -> CheckClutch2 {
 		guard GCTimer >= 250;
@@ -158,11 +165,11 @@ trans
 		assign GCTimer:=0;
 	},
 	ReqSyncSpeed -> CheckSyncSpeed {
-		guard ToGear>0;
+		guard ToZeroNonzero==1;
 		sync ReqSpeed!;
 	},
 	ReqSyncSpeed -> GearChanged {
-		guard ToGear<=0;
+		guard ToZeroNonzero==0;
 	},
 	CheckSyncSpeed -> CheckClutch {
 		guard GCTimer>=150;
@@ -208,11 +215,11 @@ trans
 		assign GCTimer:=0;
 	},
 	ReqSetGear2 -> CheckGearSet2 {
-		guard ToGear>0;
+		guard ToZeroNonzero==1;
 		sync ReqSet!;
 	},
 	ReqSetGear2 -> CheckClutchClosed2 {
-		guard ToGear==0;
+		guard ToZeroNonzero==0;
 		sync CloseClutch!;
 	},
 	CheckClutch -> COpenError {
@@ -344,11 +351,11 @@ trans
 		assign UseCase:=2,ETimer:=0;
 	},
 	ClutchOpen -> ClutchClose {
-		guard ToGear > 0;
+		guard ToZeroNonzero == 1;
 		assign ETimer:=0;
 	},
 	ClutchOpen -> Initial {
-		guard ToGear == 0;
+		guard ToZeroNonzero == 0;
 	},
 	ClutchClose -> ErrorSpeed {
 		guard ETimer == 900;
@@ -377,10 +384,10 @@ trans
 		sync TorqueZero!;
 	},
 	Zero -> Initial {
-		guard ToGear == 0;
+		guard ToZeroNonzero == 0;
 	},
 	Zero -> FindSpeed {
-		guard ToGear > 0;
+		guard ToZeroNonzero == 1;
 		sync ReqSpeed?;
 		assign ETimer:=0;
 	};

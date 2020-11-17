@@ -1,0 +1,9 @@
+G_i+ 0 (->
+            (&& (GearControl_Gear)
+                (|| (Interface_GearR)
+                    (Interface_Gear1)
+                    (Interface_Gear2)
+                    (Interface_Gear3)
+                    (Interface_Gear4)
+                    (Interface_Gear5)))
+            (Engine_Torque))
